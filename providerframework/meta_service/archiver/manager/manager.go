@@ -2,7 +2,6 @@ package manager
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"os"
 	"path/filepath"
 	"sync"
@@ -80,8 +79,6 @@ func (mgr *archivalManager) GetArchiver(typ archiver.CompressionType,
 	if _, err := os.Stat(archiveFile); !os.IsNotExist(err) {
 		return nil, fmt.Errorf("archival file(%s) already exist", archiveFile)
 	}
-
-	log.Debugf("File created --- %s", archiveFile)
 
 	file, err := os.Create(filepath.Join(mgr.archiveYard, archiveFile))
 	if err != nil {
