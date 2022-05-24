@@ -10,7 +10,8 @@ type Archiver interface {
 type CompressionType string
 
 type ArchivalManager interface {
-	GetArchiver(typ CompressionType, file string) (Archiver, error)
+	GetArchiver(typ CompressionType,
+		file string) (archiver Archiver, filePath string, err error)
 }
 
 type Writer interface {

@@ -15,6 +15,7 @@
 package options
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -26,21 +27,31 @@ import (
 	"github.com/soda-cdm/kahu/providerframework/meta_service/archiver/manager"
 )
 
+const (
+	DefaultPort                = 443
+	DefaultAddress             = "127.0.0.1"
+	DefaultCompressionFormat   = string(compressors.GZipType)
+	DefaultArchivalYard        = "/tmp"
+	DefaultBackupDriverAddress = "/run/kahu/backup-driver"
+)
+
 type CompressionType string
 
 type MetaServiceFlags struct {
-	Port              uint
-	Address           string
-	CompressionFormat string
-	ArchivalYard      string
+	Port                uint
+	Address             string
+	CompressionFormat   string
+	ArchivalYard        string
+	BackupDriverAddress string
 }
 
 func NewMetaServiceFlags() *MetaServiceFlags {
 	return &MetaServiceFlags{
-		Port:              443,
-		Address:           "127.0.0.1",
-		CompressionFormat: string(compressors.GZipType),
-		ArchivalYard:      "/tmp",
+		Port:                DefaultPort,
+		Address:             DefaultAddress,
+		CompressionFormat:   DefaultCompressionFormat,
+		ArchivalYard:        DefaultArchivalYard,
+		BackupDriverAddress: DefaultBackupDriverAddress,
 	}
 }
 
@@ -54,7 +65,9 @@ func (options *MetaServiceFlags) AddFlags(fs *pflag.FlagSet) {
 		options.CompressionFormat, fmt.Sprintf("Archival format. options(%s)",
 			strings.Join(manager.GetCompressionPluginsNames(), ",")))
 	fs.StringVarP(&options.ArchivalYard, "compression-dir", "d",
-		options.ArchivalYard, "A directory for temporarily maintaining archived file")
+		options.ArchivalYard, "A directory for temporarily maintaining backup")
+	fs.StringVarP(&options.BackupDriverAddress, "driver-address", "D",
+		options.ArchivalYard, "The grpc address of target backup driver")
 }
 
 // Apply checks validity of available command line options
@@ -73,6 +86,10 @@ func (options *MetaServiceFlags) Apply() error {
 
 	if _, err := os.Stat(options.ArchivalYard); os.IsNotExist(err) {
 		return fmt.Errorf("archival temporary directory(%s) does not exist", options.ArchivalYard)
+	}
+
+	if options.BackupDriverAddress == "" {
+		return errors.New("backup driver address can not be empty")
 	}
 
 	return nil

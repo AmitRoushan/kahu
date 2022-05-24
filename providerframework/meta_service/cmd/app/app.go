@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package server
+package app
 
 import (
 	"context"
@@ -25,8 +25,10 @@ import (
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
 
+	repo "github.com/soda-cdm/kahu/providerframework/meta_service/backup_respository"
+	"github.com/soda-cdm/kahu/providerframework/meta_service/cmd/app/options"
 	metaservice "github.com/soda-cdm/kahu/providerframework/meta_service/lib/go"
-	"github.com/soda-cdm/kahu/providerframework/meta_service/server/options"
+	"github.com/soda-cdm/kahu/providerframework/meta_service/server"
 	logOptions "github.com/soda-cdm/kahu/utils/log"
 )
 
@@ -125,9 +127,16 @@ func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
+	// initialize backup repository
+	repository, err := repo.NewBackupRepository(serviceOptions.BackupDriverAddress)
+	if err != nil {
+		return err
+	}
+
 	var opts []grpc.ServerOption
 	grpcServer := grpc.NewServer(opts...)
-	metaservice.RegisterMetaServiceServer(grpcServer, NewMetaServiceServer(ctx, serviceOptions))
+	metaservice.RegisterMetaServiceServer(grpcServer, server.NewMetaServiceServer(ctx,
+		serviceOptions, repository))
 
 	return grpcServer.Serve(lis)
 }

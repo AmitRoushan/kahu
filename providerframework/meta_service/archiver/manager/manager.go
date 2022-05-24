@@ -66,24 +66,25 @@ func NewArchiveManager(archiveYard string) archiver.ArchivalManager {
 }
 
 func (mgr *archivalManager) GetArchiver(typ archiver.CompressionType,
-	archiveFile string) (archiver.Archiver, error) {
+	archiveFileName string) (archiver.Archiver, string, error) {
 
 	cpm.Lock()
 	compressorFunc, ok := cpm.compressionPlugins[typ]
 	cpm.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("archival plugin[%s] not available", typ)
+		return nil, "", fmt.Errorf("archival plugin[%s] not available", typ)
 	}
 
+	archiveFile := filepath.Join(mgr.archiveYard, archiveFileName)
 	// check file existence
 	if _, err := os.Stat(archiveFile); !os.IsNotExist(err) {
-		return nil, fmt.Errorf("archival file(%s) already exist", archiveFile)
+		return nil, "", fmt.Errorf("archival file(%s) already exist", archiveFile)
 	}
 
-	file, err := os.Create(filepath.Join(mgr.archiveYard, archiveFile))
+	file, err := os.Create(archiveFile)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return tar.NewArchiver(compressorFunc(file)), nil
+	return tar.NewArchiver(compressorFunc(file)), archiveFile, nil
 }
