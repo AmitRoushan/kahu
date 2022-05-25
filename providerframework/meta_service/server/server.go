@@ -26,7 +26,7 @@ import (
 	"github.com/soda-cdm/kahu/providerframework/meta_service/archiver"
 	"github.com/soda-cdm/kahu/providerframework/meta_service/archiver/manager"
 	backuprepo "github.com/soda-cdm/kahu/providerframework/meta_service/backup_respository"
-	"github.com/soda-cdm/kahu/providerframework/meta_service/cmd/app/options"
+	"github.com/soda-cdm/kahu/providerframework/meta_service/cmd/options"
 	pb "github.com/soda-cdm/kahu/providerframework/meta_service/lib/go"
 	"github.com/soda-cdm/kahu/utils"
 )

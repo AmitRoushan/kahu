@@ -26,7 +26,7 @@ import (
 	"google.golang.org/grpc"
 
 	repo "github.com/soda-cdm/kahu/providerframework/meta_service/backup_respository"
-	"github.com/soda-cdm/kahu/providerframework/meta_service/cmd/app/options"
+	"github.com/soda-cdm/kahu/providerframework/meta_service/cmd/options"
 	metaservice "github.com/soda-cdm/kahu/providerframework/meta_service/lib/go"
 	"github.com/soda-cdm/kahu/providerframework/meta_service/server"
 	logOptions "github.com/soda-cdm/kahu/utils/log"

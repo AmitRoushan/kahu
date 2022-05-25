@@ -32,7 +32,7 @@ const (
 	DefaultAddress             = "127.0.0.1"
 	DefaultCompressionFormat   = string(compressors.GZipType)
 	DefaultArchivalYard        = "/tmp"
-	DefaultBackupDriverAddress = "/run/kahu/backup-driver"
+	DefaultBackupDriverAddress = "/tmp/nfs.sock"
 )
 
 type CompressionType string
@@ -67,7 +67,7 @@ func (options *MetaServiceFlags) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVarP(&options.ArchivalYard, "compression-dir", "d",
 		options.ArchivalYard, "A directory for temporarily maintaining backup")
 	fs.StringVarP(&options.BackupDriverAddress, "driver-address", "D",
-		options.ArchivalYard, "The grpc address of target backup driver")
+		options.BackupDriverAddress, "The grpc address of target backup driver")
 }
 
 // Apply checks validity of available command line options

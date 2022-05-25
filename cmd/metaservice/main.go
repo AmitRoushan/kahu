@@ -15,10 +15,11 @@
 package main
 
 import (
-	"github.com/soda-cdm/kahu/providerframework/meta_service/cmd/app"
 	"math/rand"
 	"os"
 	"time"
+
+	app "github.com/soda-cdm/kahu/providerframework/meta_service/cmd"
 )
 
 func main() {
