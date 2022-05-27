@@ -26,7 +26,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
-	pb "github.com/soda-cdm/kahu/provider/lib/go"
+	pb "github.com/soda-cdm/kahu/providers/lib/go"
 )
 
 type BackupRepository interface {

@@ -87,6 +87,7 @@ func (server *metaServer) Backup(service pb.MetaService_BackupServer) error {
 		}
 
 		resource := backupRequest.GetBackupResource().GetResource()
+		log.Infof("Resource Indo %+v", resource)
 		resourceData := backupRequest.GetBackupResource().GetData()
 		err = archiveHandler.WriteFile(utils.ResourceToFile(resource), resourceData)
 		if err != nil {

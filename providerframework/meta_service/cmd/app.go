@@ -120,6 +120,7 @@ func NewMetaServiceCommand() *cobra.Command {
 
 func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 	log.Info("Starting Server ...")
+	log.Infof("Configuration %+v", serviceOptions)
 
 	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d",
 		serviceOptions.Address, serviceOptions.Port))

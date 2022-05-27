@@ -29,26 +29,27 @@ import (
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
 )
 
-func GetConfig() (*restclient.Config, error) {
-	fmt.Println("I am in GetConfig 111")
-	var kubeconfig *string
+func GetConfig(kubeConfig *string) (*restclient.Config, error) {
+	var (
+		config    *restclient.Config
+		err       error
+	)
 
-	if home := homedir.HomeDir(); home != "" {
-		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+	if *kubeConfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", *kubeConfig)
+		if err != nil {
+			return nil, err
+		}
 	} else {
-		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+		config, err = restclient.InClusterConfig()
+		if err != nil {
+			return nil, err
+		}
 	}
-	fmt.Println("I am in GetConfig 222")
-	flag.Parse()
 
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	if err != nil {
-		log.Errorf("Building config from flags failed, %s, trying to build inclusterconfig", err.Error())
-	}
-	fmt.Println("I am in GetConfig 333")
+	flag.Parse()
 	return config, err
 }
 

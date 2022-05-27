@@ -15,6 +15,7 @@
 package main
 
 import (
+	"flag"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -27,10 +28,12 @@ import (
 )
 
 func main() {
+	kubeConfig := flag.String("kubeconfig", "", "kubernetes configuration")
+
 	// enable log with timestamp
 	utils.EnableLogTimeStamp()
 
-	config, err := utils.GetConfig()
+	config, err := utils.GetConfig(kubeConfig)
 
 	klientset, err := kahuClient.NewForConfig(config)
 	if err != nil {
@@ -46,6 +49,7 @@ func main() {
 	c := backup.NewController(klientset, infoFactory.Kahu().V1beta1().Backups(), config)
 
 	infoFactory.Start(ch)
+	log.Info("Server starting ...")
 	if err := c.Run(ch); err != nil {
 		log.Errorf("error running controller %s\n", err.Error())
 	}

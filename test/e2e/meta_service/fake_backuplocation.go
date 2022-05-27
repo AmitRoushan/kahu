@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/soda-cdm/kahu/provider/lib/go"
+	pb "github.com/soda-cdm/kahu/providers/lib/go"
 )
 
 type FakeNFSDriver struct {

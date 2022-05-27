@@ -29,7 +29,7 @@ import (
 
 const (
 	DefaultPort                = 443
-	DefaultAddress             = "127.0.0.1"
+	DefaultAddress             = "0.0.0.0"
 	DefaultCompressionFormat   = string(compressors.GZipType)
 	DefaultArchivalYard        = "/tmp"
 	DefaultBackupDriverAddress = "/tmp/nfs.sock"

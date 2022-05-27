@@ -1,0 +1,6 @@
+apiVersion: kahu.io/v1beta1
+kind: Backup
+metadata:
+  name: example-pod-backup
+spec:
+  includedResources: ["pod"]

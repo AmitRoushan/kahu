@@ -1,0 +1,95 @@
+# This mounts the nfs volume claim into /mnt and continuously
+# overwrites /mnt/index.html with the time and hostname of the pod.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kahu-nfs-provider
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      provider: nfs
+  template:
+    metadata:
+      labels:
+        provider: nfs
+    spec:
+      containers:
+      - image: docker.io/library/kahu:v1
+        imagePullPolicy: IfNotPresent
+        name: nfs-driver
+        command: ["/usr/local/bin/nfsprovider"]
+        args:
+        - "-d"
+        - "/data"
+        volumeMounts:
+          # name must match the volume name below
+        - name: nfs
+          mountPath: "/data"
+        - name: socket
+          mountPath: "/tmp"
+      - image: docker.io/library/kahu:v1
+        imagePullPolicy: IfNotPresent
+        name: meta-service
+        command: ["/usr/local/bin/metaservice"]
+        args:
+        - "-p"
+        - "8181"
+        - "-a"
+        - "0.0.0.0"
+        ports:
+        - name: grpc
+          containerPort: 8181
+        volumeMounts:
+          # name must match the volume name below
+          - name: socket
+            mountPath: "/tmp"
+      volumes:
+      - name: nfs
+        persistentVolumeClaim:
+          claimName: nfs
+      - name: socket
+        emptyDir: {}
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: kahu-nfs-provider
+  labels:
+    provider: nfs
+spec:
+  ports:
+    - name: grpc
+      port: 8181
+  selector:
+    provider: nfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 1024Mi
+  volumeName: nfs
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs
+spec:
+  capacity:
+    storage: 1024Mi
+  accessModes:
+    - ReadWriteMany
+  nfs:
+    server: 192.168.20.124
+    path: "/mnt/nfs_share"
+    #  mountOptions:
+    #- nfsvers=4.2
+

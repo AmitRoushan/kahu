@@ -45,12 +45,12 @@ import (
 	// kbclient "sigs.k8s.io/controller-runtime/pkg/client"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 
-	metaservice "github.com/soda-cdm/kahu/provider/meta_service/lib/go"
+	metaservice "github.com/soda-cdm/kahu/providerframework/meta_service/lib/go"
 	"google.golang.org/grpc"
 )
 
 var (
-	address        = "127.0.0.1"
+	address        = "10.96.167.143"
 	port           = 8181
 	grpcServer     *grpc.Server
 	grpcConnection *grpc.ClientConn
@@ -195,10 +195,17 @@ func (c *Controller) runBackup(backup *pkgbackup.Request) error {
 
 	grpcConnection, err := metaservice.NewLBDial(fmt.Sprintf("%s:%d", address, port),
 		grpc.WithInsecure())
+	if err != nil {
+		c.Logger.Errorf("Error connecting meta service %s", err)
+		return err
+	}
 
 	metaClient = metaservice.NewMetaServiceClient(grpcConnection)
-
 	backupClient, err := metaClient.Backup(context.Background())
+	if err != nil {
+		c.Logger.Errorf("Error initiating meta service backup %s", err)
+		return err
+	}
 
 	err = backupClient.Send(&metaservice.BackupRequest{
 		Backup: &metaservice.BackupRequest_Identifier{
@@ -212,8 +219,18 @@ func (c *Controller) runBackup(backup *pkgbackup.Request) error {
 	}
 
 	k8sClinet, err := kubernetes.NewForConfig(c.config)
+	if err != nil {
+		c.Logger.Errorf("Error initiating kube client %s", err)
+		return err
+	}
+	resource_data, err := k8sClinet.CoreV1().Pods("default").
+		Get(context.TODO(), "pod1", metav1.GetOptions{})
+	if err != nil {
+		c.Logger.Errorf("Error getting kube client %s", err)
+		return err
+	}
 
-	resource_data, err := k8sClinet.CoreV1().Pods("default").Get(context.TODO(), "pod1", metav1.GetOptions{})
+	c.Logger.Infof("Sending data %s", resource_data)
 
 	resourceData, err := json.Marshal(resource_data)
 	err = backupClient.Send(&metaservice.BackupRequest{
