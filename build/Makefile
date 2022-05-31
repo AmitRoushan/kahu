@@ -24,13 +24,14 @@ MAKEFLAGS += --no-builtin-rules
 OUT_DIR ?= _output
 BIN_DIR := $(OUT_DIR)/bin
 PRJ_SRC_PATH := github.com/soda-cdm/kahu
-GENERATED_FILE_PREFIX := zz_generated.
+GENERATED_FILE_EXT := .pb.go
 
 # Metadata for driving the build lives here.
 META_DIR := .make
 
 # This controls the verbosity of the build.  Higher numbers mean more output.
 KUBE_VERBOSE ?= 1
+
 
 define ALL_HELP_INFO
 # Build code.
@@ -58,8 +59,8 @@ ifeq ($(PRINT_HELP),y)
 all:
 	@echo "$$ALL_HELP_INFO"
 else
-all: generated_files
-	hack/make-rules/build.sh $(WHAT)
+all: verify
+	build/build.sh $(WHAT)
 endif
 
 define CLEAN_HELP_INFO
@@ -92,7 +93,7 @@ clean_generated:
 	@echo "$$CLEAN_GENERATED_HELP_INFO"
 else
 clean_generated:
-	find . -type f -name '$(GENERATED_FILE_PREFIX)*'  | xargs rm -f
+	find . -type f -name '*$(GENERATED_FILE_EXT)'  | xargs rm -f
 endif
 
 define QUICK_RELEASE_IMAGES_HELP_INFO
@@ -126,6 +127,22 @@ ifeq ($(PRINT_HELP),y)
 generated_files:
 	@echo "$$GENERATED_FILES_HELP_INFO"
 else
-generated_files gen_openapi:
+generated_files: verify
 	$(MAKE) -f Makefile.generate_proto $@ CALLED_FROM_MAIN_MAKEFILE=1
 endif
+
+define VERIFY_HELP_INFO
+# Runs all the presubmission verifications.
+#
+# Example:
+#   make verify
+endef
+.PHONY: verify
+ifeq ($(PRINT_HELP),y)
+verify:
+	@echo "$$VERIFY_HELP_INFO"
+else
+verify:
+	build/verify.sh
+endif
+
