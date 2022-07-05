@@ -27,15 +27,15 @@ import (
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
 
-	nfs_provider "github.com/soda-cdm/kahu/providers/lib/go"
-	"github.com/soda-cdm/kahu/providers/nfs_provider/server/options"
+	nfsprovider "github.com/soda-cdm/kahu/providers/lib/go"
+	"github.com/soda-cdm/kahu/providers/nfsprovider/server/options"
 	"github.com/soda-cdm/kahu/utils"
 	logOptions "github.com/soda-cdm/kahu/utils/logoptions"
 )
 
 const (
 	// NFSService component name
-	componentNFSService = "nfs_provider"
+	componentNFSService = "nfsprovider"
 )
 
 // NewNFSProviderCommand creates a *cobra.Command object with default parameters
@@ -135,9 +135,8 @@ func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 
 	var opts []grpc.ServerOption
 	grpcServer := grpc.NewServer(opts...)
-	nfs_provider.RegisterMetaBackupServer(grpcServer, NewMetaBackupServer(ctx, serviceOptions))
-	nfs_provider.RegisterIdentityServer(grpcServer, NewIdentityServer(ctx, serviceOptions))
-
+	nfsprovider.RegisterMetaBackupServer(grpcServer, NewMetaBackupServer(ctx, serviceOptions))
+	nfsprovider.RegisterIdentityServer(grpcServer, NewIdentityServer(ctx, serviceOptions))
 	go func(ctx context.Context, server *grpc.Server) {
 		<-ctx.Done()
 		server.Stop()

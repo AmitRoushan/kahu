@@ -24,9 +24,15 @@ import (
 	"syscall"
 
 	log "github.com/sirupsen/logrus"
+
+	"google.golang.org/grpc"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 )
 
 func GetConfig(kubeConfig string) (config *restclient.Config, err error) {
@@ -53,4 +59,36 @@ func SetupSignalHandler(cancel context.CancelFunc) {
 		log.Infof("Received signal %s, shutting down", sig)
 		cancel()
 	}()
+}
+
+func GetDynamicClient(config *restclient.Config) (dynamic.Interface, error) {
+	return dynamic.NewForConfig(config)
+}
+func GetK8sClient(config *restclient.Config) (*kubernetes.Clientset, error) {
+	return kubernetes.NewForConfig(config)
+}
+
+func GetgrpcConn(address string, port uint) (*grpc.ClientConn, error) {
+	return metaservice.NewLBDial(fmt.Sprintf("%s:%d", address, port), grpc.WithInsecure())
+}
+
+func GetMetaserviceClient(grpcConnection *grpc.ClientConn) metaservice.MetaServiceClient {
+	return metaservice.NewMetaServiceClient(grpcConnection)
+}
+
+func GetMetaserviceBackupClient(address string, port uint) metaservice.MetaService_BackupClient {
+
+	grpcconn, err := metaservice.NewLBDial(fmt.Sprintf("%s:%d", address, port), grpc.WithInsecure())
+	if err != nil {
+		log.Errorf("error getting grpc connection %s", err)
+		return nil
+	}
+	metaClient := metaservice.NewMetaServiceClient(grpcconn)
+
+	backupClient, err := metaClient.Backup(context.Background())
+	if err != nil {
+		log.Errorf("error getting backupclient %s", err)
+		return nil
+	}
+	return backupClient
 }

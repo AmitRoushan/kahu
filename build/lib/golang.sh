@@ -26,15 +26,17 @@ readonly KAHU_GO_PACKAGE=github.com/soda-cdm/kahu
 readonly minimum_go_version=go1.17.0
 readonly KAHU_STATIC_BINARIES=(
   # add statically linked binaries here
-  controller-manager
-  meta-service
+  controllermanager
+  metaservice
+  nfsprovider
 )
 
 golang::targets() {
   # add all golang binaries here
   local targets=(
-    cmd/controller-manager
-    cmd/meta-service
+    cmd/controllermanager
+    cmd/metaservice
+    providers/nfsprovider/nfsprovider
   )
   echo "${targets[@]}"
 }
