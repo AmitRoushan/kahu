@@ -28,6 +28,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apiserver/pkg/registry/generic/registry"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -302,7 +303,7 @@ func (ctx *restoreContext) updateRestoreStatus(restore *kahuapi.Restore) (*kahua
 		currentRestore,
 		v1.UpdateOptions{})
 	if err != nil {
-		if apierrors.IsResourceExpired(err) {
+		if strings.Contains(err.Error(), registry.OptimisticLockErrorMsg) {
 			return ctx.updatePhaseWithClient(restore)
 		}
 		return restore, err
