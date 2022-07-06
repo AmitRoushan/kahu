@@ -19,6 +19,8 @@ package app
 import (
 	"context"
 	"fmt"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"os"
 	"os/signal"
 	"syscall"
@@ -117,9 +119,12 @@ through the apiserver and makes attempts to move the current state towards the d
 				log.Fatalf("Error getting hostname: %v", err)
 			}
 
+			eventRecorder := completeConfig.EventBroadcaster.NewRecorder(scheme.Scheme,
+				v1.EventSource{Component: "kahu-controller-manager-lease"})
+
 			lockConfig := resourcelock.ResourceLockConfig{
 				Identity:      id,
-				EventRecorder: completeConfig.EventRecorder,
+				EventRecorder: eventRecorder,
 			}
 			resourceLock, err := resourcelock.New(
 				resourcelock.ConfigMapsLeasesResourceLock,

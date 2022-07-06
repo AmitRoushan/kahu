@@ -19,22 +19,13 @@ package backup
 import (
 	"context"
 
+	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/kubernetes"
-
-	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 )
 
 func (c *controller) getServices(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
-
-	c.logger.Infoln("starting collecting services")
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("Unable to get k8sclient %s", err)
-		return err
-	}
 
 	var labelSelectors map[string]string
 	if backup.Spec.Label != nil {
@@ -42,7 +33,7 @@ func (c *controller) getServices(gvr GroupResouceVersion, namespace string, back
 	}
 
 	selectors := labels.Set(labelSelectors).String()
-	allServices, err := k8sClinet.CoreV1().Services(namespace).List(context.TODO(), metav1.ListOptions{
+	allServices, err := c.kubeClient.CoreV1().Services(namespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectors,
 	})
 	if err != nil {
@@ -50,7 +41,7 @@ func (c *controller) getServices(gvr GroupResouceVersion, namespace string, back
 	}
 
 	for _, service := range allServices.Items {
-		serviceData, err := k8sClinet.CoreV1().Services(namespace).Get(context.TODO(), service.Name, metav1.GetOptions{})
+		serviceData, err := c.kubeClient.CoreV1().Services(namespace).Get(context.TODO(), service.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -67,19 +58,13 @@ func (c *controller) getServices(gvr GroupResouceVersion, namespace string, back
 func (c *controller) getConfigMapS(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("Unable to get k8sclient %s", err)
-		return err
-	}
-
 	var labelSelectors map[string]string
 	if backup.Spec.Label != nil {
 		labelSelectors = backup.Spec.Label.MatchLabels
 	}
 
 	selectors := labels.Set(labelSelectors).String()
-	configList, err := k8sClinet.CoreV1().ConfigMaps(namespace).List(context.TODO(), metav1.ListOptions{
+	configList, err := c.kubeClient.CoreV1().ConfigMaps(namespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectors,
 	})
 	if err != nil {
@@ -101,19 +86,13 @@ func (c *controller) getConfigMapS(gvr GroupResouceVersion, namespace string, ba
 func (c *controller) getSecrets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("Unable to get k8sclient %s", err)
-		return err
-	}
-
 	var labelSelectors map[string]string
 	if backup.Spec.Label != nil {
 		labelSelectors = backup.Spec.Label.MatchLabels
 	}
 
 	selectors := labels.Set(labelSelectors).String()
-	secretList, err := k8sClinet.CoreV1().Secrets(namespace).List(context.TODO(), metav1.ListOptions{
+	secretList, err := c.kubeClient.CoreV1().Secrets(namespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectors,
 	})
 	if err != nil {
@@ -121,7 +100,7 @@ func (c *controller) getSecrets(gvr GroupResouceVersion, namespace string, backu
 	}
 
 	for _, secret := range secretList.Items {
-		secretData, err := k8sClinet.CoreV1().Secrets(namespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
+		secretData, err := c.kubeClient.CoreV1().Secrets(namespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -138,19 +117,13 @@ func (c *controller) getSecrets(gvr GroupResouceVersion, namespace string, backu
 func (c *controller) getEndpoints(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("Unable to get k8sclient %s", err)
-		return err
-	}
-
 	var labelSelectors map[string]string
 	if backup.Spec.Label != nil {
 		labelSelectors = backup.Spec.Label.MatchLabels
 	}
 
 	selectors := labels.Set(labelSelectors).String()
-	endpointList, err := k8sClinet.CoreV1().Endpoints(namespace).List(context.TODO(), metav1.ListOptions{
+	endpointList, err := c.kubeClient.CoreV1().Endpoints(namespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectors,
 	})
 	if err != nil {
@@ -158,7 +131,7 @@ func (c *controller) getEndpoints(gvr GroupResouceVersion, namespace string, bac
 	}
 
 	for _, endpoint := range endpointList.Items {
-		endpointData, err := k8sClinet.CoreV1().Endpoints(namespace).Get(context.TODO(), endpoint.Name, metav1.GetOptions{})
+		endpointData, err := c.kubeClient.CoreV1().Endpoints(namespace).Get(context.TODO(), endpoint.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -175,19 +148,13 @@ func (c *controller) getEndpoints(gvr GroupResouceVersion, namespace string, bac
 func (c *controller) getReplicasets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("Unable to get k8sclient %s", err)
-		return err
-	}
-
 	var labelSelectors map[string]string
 	if backup.Spec.Label != nil {
 		labelSelectors = backup.Spec.Label.MatchLabels
 	}
 
 	selectors := labels.Set(labelSelectors).String()
-	replicasetList, err := k8sClinet.AppsV1().ReplicaSets(namespace).List(context.TODO(), metav1.ListOptions{
+	replicasetList, err := c.kubeClient.AppsV1().ReplicaSets(namespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectors,
 	})
 	if err != nil {
@@ -195,7 +162,7 @@ func (c *controller) getReplicasets(gvr GroupResouceVersion, namespace string, b
 	}
 
 	for _, replicaset := range replicasetList.Items {
-		replicasetData, err := k8sClinet.AppsV1().ReplicaSets(namespace).Get(context.TODO(), replicaset.Name, metav1.GetOptions{})
+		replicasetData, err := c.kubeClient.AppsV1().ReplicaSets(namespace).Get(context.TODO(), replicaset.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -212,19 +179,13 @@ func (c *controller) getReplicasets(gvr GroupResouceVersion, namespace string, b
 func (c *controller) getStatefulsets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("Unable to get k8sclient %s", err)
-		return err
-	}
-
 	var labelSelectors map[string]string
 	if backup.Spec.Label != nil {
 		labelSelectors = backup.Spec.Label.MatchLabels
 	}
 
 	selectors := labels.Set(labelSelectors).String()
-	statefulList, err := k8sClinet.AppsV1().StatefulSets(namespace).List(context.TODO(), metav1.ListOptions{
+	statefulList, err := c.kubeClient.AppsV1().StatefulSets(namespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectors,
 	})
 	if err != nil {
@@ -232,7 +193,7 @@ func (c *controller) getStatefulsets(gvr GroupResouceVersion, namespace string, 
 	}
 
 	for _, stateful := range statefulList.Items {
-		statefulData, err := k8sClinet.AppsV1().StatefulSets(namespace).Get(context.TODO(), stateful.Name, metav1.GetOptions{})
+		statefulData, err := c.kubeClient.AppsV1().StatefulSets(namespace).Get(context.TODO(), stateful.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}

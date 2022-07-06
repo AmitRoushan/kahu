@@ -26,7 +26,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"google.golang.org/grpc"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -41,13 +40,6 @@ func GetConfig(kubeConfig string) (config *restclient.Config, err error) {
 	}
 
 	return restclient.InClusterConfig()
-}
-
-func NamespaceAndName(objMeta metav1.Object) string {
-	if objMeta.GetNamespace() == "" {
-		return objMeta.GetName()
-	}
-	return fmt.Sprintf("%s/%s", objMeta.GetNamespace(), objMeta.GetName())
 }
 
 func SetupSignalHandler(cancel context.CancelFunc) {

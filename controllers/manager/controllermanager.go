@@ -19,6 +19,7 @@ package manager
 import (
 	"context"
 	"fmt"
+	"k8s.io/client-go/tools/record"
 
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -47,6 +48,7 @@ type ControllerManager struct {
 	kahuClient               versioned.Interface
 	kubeClient               kubernetes.Interface
 	discoveryHelper          discovery.DiscoveryHelper
+	EventBroadcaster         record.EventBroadcaster
 }
 
 func NewControllerManager(ctx context.Context,
@@ -78,6 +80,7 @@ func NewControllerManager(ctx context.Context,
 		kubeClient:               completeConfig.KubeClient,
 		informerFactory:          informerFactory,
 		discoveryHelper:          completeConfig.DiscoveryHelper,
+		EventBroadcaster:         completeConfig.EventBroadcaster,
 	}, nil
 }
 
@@ -86,9 +89,11 @@ func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controll
 	// add controllers here
 	// integrate backup controller
 	backupController, err := backup.NewController(&mgr.completeConfig.BackupControllerConfig,
-		mgr.restConfig,
+		mgr.kubeClient,
 		mgr.kahuClient,
-		mgr.informerFactory.Kahu().V1beta1().Backups())
+		mgr.completeConfig.DynamicClient,
+		mgr.informerFactory,
+		mgr.EventBroadcaster)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize backup controller. %s", err)
 	}

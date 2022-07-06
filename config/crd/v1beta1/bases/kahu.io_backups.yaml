@@ -42,7 +42,7 @@ spec:
                   should be taken or not
                 type: boolean
               excludedNamespaces:
-                description: ExcludedNamespaces is a list of all namespaces excluded
+                description: ExcludeNamespaces is a list of all namespaces excluded
                   for backup
                 items:
                   type: string
@@ -60,7 +60,7 @@ spec:
                   type: string
                 type: array
               includedNamespaces:
-                description: IncludedNamespaces is a list of all namespaces included
+                description: IncludeNamespaces is a list of all namespaces included
                   for backup. If empty, all namespaces are included
                 items:
                   type: string

@@ -60,7 +60,7 @@ type BackupSpec struct {
 	// IncludedProviders is a list of all provideres included for backup. If empty, all provideres
 	// are included
 	// +optional
-	IncludedProviders []string `json:"includedProviders,omitempty"`
+	IncludeProviders []string `json:"includedProviders,omitempty"`
 
 	// ExcludedProviders is a list of all provideres excluded for backup
 	// +optional
@@ -74,23 +74,23 @@ type BackupSpec struct {
 	// +optional
 	EnableVolumeBackup bool `json:"enableVolumeBackup,omitempty"`
 
-	// IncludedNamespaces is a list of all namespaces included for backup. If empty, all namespaces
+	// IncludeNamespaces is a list of all namespaces included for backup. If empty, all namespaces
 	// are included
 	// +optional
-	IncludedNamespaces []string `json:"includedNamespaces,omitempty"`
+	IncludeNamespaces []string `json:"includedNamespaces,omitempty"`
 
-	// ExcludedNamespaces is a list of all namespaces excluded for backup
+	// ExcludeNamespaces is a list of all namespaces excluded for backup
 	// +optional
-	ExcludedNamespaces []string `json:"excludedNamespaces,omitempty"`
+	ExcludeNamespaces []string `json:"excludedNamespaces,omitempty"`
 
 	// IncludedResources is a list of all resources included for backup. If empty, all resources
 	// are included
 	// +optional
-	IncludedResources []string `json:"includedResources,omitempty"`
+	IncludeResources []string `json:"includedResources,omitempty"`
 
 	// ExcludedResources is a list of all resources excluded for backup
 	// +optional
-	ExcludedResources []string `json:"excludedResources,omitempty"`
+	ExcludeResources []string `json:"excludedResources,omitempty"`
 
 	// Label is used to filter the resources
 	// +optional
@@ -148,8 +148,9 @@ type BackupCondition struct {
 	Status string `json:"status,omitempty"`
 }
 
-// BackupPhase is a state of backup
 // +kubebuilder:validation:Enum=New;FailedValidation;InProgress;Completed;PartiallyFailed;Failed;Deleting
+// BackupPhase is a state of backup
+
 type BackupPhase string
 
 const (
@@ -199,6 +200,7 @@ type BackupStatus struct {
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
 type BackupList struct {
 	metav1.TypeMeta `json:",inline"`
 

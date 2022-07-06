@@ -28,6 +28,7 @@ type KahuV1beta1Interface interface {
 	RESTClient() rest.Interface
 	BackupsGetter
 	BackupLocationsGetter
+	BackupVolumeContentsGetter
 	ProvidersGetter
 	RestoresGetter
 }
@@ -43,6 +44,10 @@ func (c *KahuV1beta1Client) Backups() BackupInterface {
 
 func (c *KahuV1beta1Client) BackupLocations() BackupLocationInterface {
 	return newBackupLocations(c)
+}
+
+func (c *KahuV1beta1Client) BackupVolumeContents() BackupVolumeContentInterface {
+	return newBackupVolumeContents(c)
 }
 
 func (c *KahuV1beta1Client) Providers() ProviderInterface {

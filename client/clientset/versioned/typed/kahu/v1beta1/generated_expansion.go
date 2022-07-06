@@ -22,6 +22,8 @@ type BackupExpansion interface{}
 
 type BackupLocationExpansion interface{}
 
+type BackupVolumeContentExpansion interface{}
+
 type ProviderExpansion interface{}
 
 type RestoreExpansion interface{}

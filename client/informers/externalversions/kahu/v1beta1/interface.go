@@ -28,6 +28,8 @@ type Interface interface {
 	Backups() BackupInformer
 	// BackupLocations returns a BackupLocationInformer.
 	BackupLocations() BackupLocationInformer
+	// BackupVolumeContents returns a BackupVolumeContentInformer.
+	BackupVolumeContents() BackupVolumeContentInformer
 	// Providers returns a ProviderInformer.
 	Providers() ProviderInformer
 	// Restores returns a RestoreInformer.
@@ -53,6 +55,11 @@ func (v *version) Backups() BackupInformer {
 // BackupLocations returns a BackupLocationInformer.
 func (v *version) BackupLocations() BackupLocationInformer {
 	return &backupLocationInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// BackupVolumeContents returns a BackupVolumeContentInformer.
+func (v *version) BackupVolumeContents() BackupVolumeContentInformer {
+	return &backupVolumeContentInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // Providers returns a ProviderInformer.

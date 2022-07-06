@@ -201,7 +201,7 @@ func (ctrl *controller) processNextItem() bool {
 		return true
 	}
 
-	ctrl.logger.WithError(err).WithField("restore", key).Error("Re-adding item  to queue")
+	ctrl.logger.WithError(err).WithField("resource", key).Error("Re-adding item  to queue")
 	ctrl.queue.AddRateLimited(key)
 
 	return true

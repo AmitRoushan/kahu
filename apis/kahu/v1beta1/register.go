@@ -43,6 +43,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion, &Restore{}, &RestoreList{})
 	scheme.AddKnownTypes(SchemeGroupVersion, &Provider{}, &ProviderList{})
 	scheme.AddKnownTypes(SchemeGroupVersion, &BackupLocation{}, &BackupLocationList{})
+	scheme.AddKnownTypes(SchemeGroupVersion, &BackupVolumeContent{}, &BackupVolumeContentList{})
 
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil
