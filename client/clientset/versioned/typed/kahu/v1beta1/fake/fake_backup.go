@@ -25,6 +25,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
+	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
 )
@@ -109,4 +110,14 @@ func (c *FakeBackups) DeleteCollection(ctx context.Context, opts v1.DeleteOption
 
 	_, err := c.Fake.Invokes(action, &v1beta1.BackupList{})
 	return err
+}
+
+// Patch applies the patch and returns the patched backup.
+func (c *FakeBackups) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.Backup, err error) {
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(backupsResource, name, pt, data, subresources...), &v1beta1.Backup{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1beta1.Backup), err
 }

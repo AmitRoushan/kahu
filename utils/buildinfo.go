@@ -17,8 +17,11 @@ limitations under the License.
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"runtime"
+
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -54,4 +57,13 @@ func GetBuildInfo() BuildInfo {
 		Compiler:     runtime.Compiler,
 		Platform:     fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
 	}
+}
+
+func (info BuildInfo) Print() {
+	printPretty, err := json.MarshalIndent(&info, "", "    ")
+	if err != nil {
+		log.Infof("%+v", info)
+		return
+	}
+	log.Infof("%s", string(printPretty))
 }

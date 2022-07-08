@@ -28,12 +28,12 @@ type Interface interface {
 	Backups() BackupInformer
 	// BackupLocations returns a BackupLocationInformer.
 	BackupLocations() BackupLocationInformer
-	// BackupVolumeContents returns a BackupVolumeContentInformer.
-	BackupVolumeContents() BackupVolumeContentInformer
 	// Providers returns a ProviderInformer.
 	Providers() ProviderInformer
 	// Restores returns a RestoreInformer.
 	Restores() RestoreInformer
+	// VolumeBackupContents returns a VolumeBackupContentInformer.
+	VolumeBackupContents() VolumeBackupContentInformer
 }
 
 type version struct {
@@ -57,11 +57,6 @@ func (v *version) BackupLocations() BackupLocationInformer {
 	return &backupLocationInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// BackupVolumeContents returns a BackupVolumeContentInformer.
-func (v *version) BackupVolumeContents() BackupVolumeContentInformer {
-	return &backupVolumeContentInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
-}
-
 // Providers returns a ProviderInformer.
 func (v *version) Providers() ProviderInformer {
 	return &providerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
@@ -70,4 +65,9 @@ func (v *version) Providers() ProviderInformer {
 // Restores returns a RestoreInformer.
 func (v *version) Restores() RestoreInformer {
 	return &restoreInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// VolumeBackupContents returns a VolumeBackupContentInformer.
+func (v *version) VolumeBackupContents() VolumeBackupContentInformer {
+	return &volumeBackupContentInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

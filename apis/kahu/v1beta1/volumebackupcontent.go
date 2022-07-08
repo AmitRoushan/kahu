@@ -21,37 +21,41 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// BackupVolumeContentSpec defines the desired state of BackupVolumeContent
-type BackupVolumeContentSpec struct {
+// VolumeBackupContentSpec defines the desired state of VolumeBackupContent
+type VolumeBackupContentSpec struct {
 	// BackupName is backup CR name specified during backup
 	// +required
 	BackupName string `json:"backupName"`
 
 	// Volume represents kubernetes volume to be backed up
-	// +required
-	Volume v1.PersistentVolume `json:"volume"`
+	// +optional
+	// +nullable
+	Volume []v1.PersistentVolume `json:"volumes"`
+
+	// Volume provider for set of volumes
+	VolumeProvider *string `json:"volumeProvider,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=New;InProgress;Completed;Failed;Deleting
 
-type BackupVolumeContentPhase string
+type VolumeBackupContentPhase string
 
 const (
-	BackupVolumeContentPhaseInit       BackupVolumeContentPhase = "New"
-	BackupVolumeContentPhaseInProgress BackupVolumeContentPhase = "InProgress"
-	BackupVolumeContentPhaseCompleted  BackupVolumeContentPhase = "Completed"
-	BackupVolumeContentPhaseFailed     BackupVolumeContentPhase = "Failed"
-	BackupVolumeContentPhaseDeleting   BackupVolumeContentPhase = "Deleting"
+	VolumeBackupContentPhaseInit       VolumeBackupContentPhase = "New"
+	VolumeBackupContentPhaseInProgress VolumeBackupContentPhase = "InProgress"
+	VolumeBackupContentPhaseCompleted  VolumeBackupContentPhase = "Completed"
+	VolumeBackupContentPhaseFailed     VolumeBackupContentPhase = "Failed"
+	VolumeBackupContentPhaseDeleting   VolumeBackupContentPhase = "Deleting"
 )
 
-// BackupVolumeContentStatus defines the observed state of BackupVolumeContent
-type BackupVolumeContentStatus struct {
+// VolumeBackupContentStatus defines the observed state of VolumeBackupContent
+type VolumeBackupContentStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// +optional
 	// +kubebuilder:default=New
-	Phase BackupVolumeContentPhase `json:"phase,omitempty"`
+	Phase VolumeBackupContentPhase `json:"phase,omitempty"`
 
 	// +optional
 	// +nullable
@@ -65,9 +69,6 @@ type BackupVolumeContentStatus struct {
 	FailureReason string `json:"failureReason,omitempty"`
 
 	// +optional
-	VolumeProvider string `json:"volumeProvider,omitempty"`
-
-	// +optional
 	VolumeType string `json:"volumeType,omitempty"`
 }
 
@@ -78,22 +79,22 @@ type BackupVolumeContentStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 
-// BackupVolumeContent is the Schema for the BackupVolumeContents API
-type BackupVolumeContent struct {
+// VolumeBackupContent is the Schema for the VolumeBackupContents API
+type VolumeBackupContent struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// +optional
-	Spec BackupVolumeContentSpec `json:"spec,omitempty"`
+	Spec VolumeBackupContentSpec `json:"spec,omitempty"`
 	// +optional
-	Status BackupVolumeContentStatus `json:"status,omitempty"`
+	Status VolumeBackupContentStatus `json:"status,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// BackupVolumeContentList contains a list of BackupVolumeContent
-type BackupVolumeContentList struct {
+// VolumeBackupContentList contains a list of VolumeBackupContent
+type VolumeBackupContentList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []BackupVolumeContent `json:"items"`
+	Items           []VolumeBackupContent `json:"items"`
 }

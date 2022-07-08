@@ -36,16 +36,16 @@ func (c *FakeKahuV1beta1) BackupLocations() v1beta1.BackupLocationInterface {
 	return &FakeBackupLocations{c}
 }
 
-func (c *FakeKahuV1beta1) BackupVolumeContents() v1beta1.BackupVolumeContentInterface {
-	return &FakeBackupVolumeContents{c}
-}
-
 func (c *FakeKahuV1beta1) Providers() v1beta1.ProviderInterface {
 	return &FakeProviders{c}
 }
 
 func (c *FakeKahuV1beta1) Restores() v1beta1.RestoreInterface {
 	return &FakeRestores{c}
+}
+
+func (c *FakeKahuV1beta1) VolumeBackupContents() v1beta1.VolumeBackupContentInterface {
+	return &FakeVolumeBackupContents{c}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

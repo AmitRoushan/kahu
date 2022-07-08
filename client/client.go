@@ -49,9 +49,9 @@ type Factory interface {
 
 
 type Config struct {
-	KubeConfig    string
-	ClientQPS     float32
-	ClientBurst   int
+	KubeConfig    string `json:"kubeConfig"`
+	ClientQPS     float32 `json:"clientQPS"`
+	ClientBurst   int `json:"clientBurst"`
 }
 
 

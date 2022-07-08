@@ -40,10 +40,6 @@ var cpm *compressorPluginManager
 var dbConnOnce sync.Once
 
 func init() {
-	initManager()
-}
-
-func initManager() {
 	dbConnOnce.Do(func() {
 		cpm = &compressorPluginManager{
 			compressionWriterPlugins: make(map[archiver.CompressionType]func(archiver.Writer) archiver.Writer),
