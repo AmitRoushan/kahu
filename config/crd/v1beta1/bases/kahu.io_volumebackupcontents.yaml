@@ -39,6 +39,9 @@ spec:
               backupName:
                 description: BackupName is backup CR name specified during backup
                 type: string
+              volumeProvider:
+                description: Volume provider for set of volumes
+                type: string
               volumes:
                 description: Volume represents kubernetes volume to be backed up
                 items:
@@ -1166,8 +1169,6 @@ spec:
               startTimestamp:
                 format: date-time
                 nullable: true
-                type: string
-              volumeProvider:
                 type: string
               volumeType:
                 type: string

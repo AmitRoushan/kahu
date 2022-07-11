@@ -27,18 +27,16 @@ import (
 )
 
 type optionsManager struct {
-	manager          *controllerManagerOptions
-	log              *logoptions.LogOptions
-	kahuClient       *kahuClientOptions
-	backupController *BackupControllerFlags
+	manager    *controllerManagerOptions
+	log        *logoptions.LogOptions
+	kahuClient *kahuClientOptions
 }
 
 func NewOptionsManager() (*optionsManager, error) {
 	return &optionsManager{
-		manager:          NewGenericControllerOptions(),
-		log:              logoptions.NewLogOptions(),
-		kahuClient:       NewKahuClientOptions(),
-		backupController: NewBackupControllerFlags(),
+		manager:    NewGenericControllerOptions(),
+		log:        logoptions.NewLogOptions(),
+		kahuClient: NewKahuClientOptions(),
 	}, nil
 }
 
@@ -46,7 +44,6 @@ func (opt *optionsManager) AddFlags(fs *pflag.FlagSet) {
 	opt.manager.AddFlags(fs)
 	opt.log.AddFlags(fs)
 	opt.kahuClient.AddFlags(fs)
-	opt.backupController.AddFlags(fs)
 }
 
 func (opt *optionsManager) ApplyTo(cfg *config.Config) error {
@@ -59,9 +56,6 @@ func (opt *optionsManager) ApplyTo(cfg *config.Config) error {
 	if err := opt.kahuClient.ApplyTo(&cfg.KahuClientConfig); err != nil {
 		return err
 	}
-	if err := opt.backupController.ApplyTo(&cfg.BackupControllerConfig); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -71,7 +65,6 @@ func (opt *optionsManager) Validate() error {
 	// validate all controllers options
 	errs = append(errs, opt.manager.Validate()...)
 	errs = append(errs, opt.kahuClient.Validate()...)
-	errs = append(errs, opt.backupController.Validate()...)
 
 	if len(errs) == 0 {
 		return nil

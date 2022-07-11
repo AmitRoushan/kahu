@@ -88,7 +88,7 @@ func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controll
 	availableControllers := make(map[string]controllers.Controller, 0)
 	// add controllers here
 	// integrate backup controller
-	backupController, err := backup.NewController(&mgr.completeConfig.BackupControllerConfig,
+	backupController, err := backup.NewController(
 		mgr.kubeClient,
 		mgr.kahuClient,
 		mgr.completeConfig.DynamicClient,

@@ -40,6 +40,17 @@ type Backup struct {
 	Status BackupStatus `json:"status,omitempty"`
 }
 
+type ResourceSpec struct {
+	// +required
+	Name string `json:"name"`
+
+	// +required
+	Kind string `json:"kind"`
+
+	// +optional
+	IsRegex bool `json:"isRegex,omitempty"`
+}
+
 type BackupSpec struct {
 	// MetadataLocation is location where backup is going to be stored
 	// +required
@@ -86,11 +97,11 @@ type BackupSpec struct {
 	// IncludedResources is a list of all resources included for backup. If empty, all resources
 	// are included
 	// +optional
-	IncludeResources []string `json:"includedResources,omitempty"`
+	IncludeResources []ResourceSpec `json:"includedResources,omitempty"`
 
 	// ExcludedResources is a list of all resources excluded for backup
 	// +optional
-	ExcludeResources []string `json:"excludedResources,omitempty"`
+	ExcludeResources []ResourceSpec `json:"excludedResources,omitempty"`
 
 	// Label is used to filter the resources
 	// +optional
@@ -106,27 +117,27 @@ type ResourceHookSpec struct {
 	// IncludedNamespaces is a list of all namespaces included for hook. If empty, all namespaces
 	// are included
 	// +optional
-	IncludedNamespaces []string `json:"includedNamespaces,omitempty"`
+	IncludeNamespaces []string `json:"includeNamespaces,omitempty"`
 
 	// ExcludedNamespaces is a list of all namespaces excluded for hook
 	// +optional
-	ExcludedNamespaces []string `json:"excludedNamespaces,omitempty"`
+	ExcludeNamespaces []string `json:"excludeNamespaces,omitempty"`
 
 	// IncludedResources is a list of all resources included for hook. If empty, all resources
 	// are included
 	// +optional
-	IncludedResources []string `json:"includedResources,omitempty"`
+	IncludeResources []string `json:"includeResources,omitempty"`
 
 	// ExcludedResources is a list of all resources excluded for backup
 	// +optional
-	ExcludedResources []string `json:"excludedResources,omitempty"`
+	ExcludeResources []string `json:"excludeResources,omitempty"`
 
 	// Label is used to filter the resources
 	// +optional
 	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
 }
 
-// ReclaimPolicy tells about reclamation of the backup. It can be either delete or retain
+// ReclaimPolicyType tells about reclamation of the backup. It can be either delete or retain
 type ReclaimPolicyType struct {
 	// +optional
 	ReclaimPolicyDelete string `json:"reclaimPolicyDelete,omitempty"`
@@ -135,8 +146,8 @@ type ReclaimPolicyType struct {
 	ReclaimPolicyRetain string `json:"reclaimPolicyRetain,omitempty"`
 }
 
-// BackupCondition indicates the current state of a resource that is backing up
-type BackupCondition struct {
+// BackupResource indicates the current state of a resource that is backing up
+type BackupResource struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// ResourceName is a one of the item of backup that is backing up
@@ -148,38 +159,53 @@ type BackupCondition struct {
 	Status string `json:"status,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=New;FailedValidation;InProgress;Completed;PartiallyFailed;Failed;Deleting
-// BackupPhase is a state of backup
+// +kubebuilder:validation:Enum=New;BackupMetadata;BackupVolume;Deleting;Completed
+// BackupPhase is a phase of backup
 
 type BackupPhase string
+
+// +kubebuilder:validation:Enum=FailedValidation;InProgress;PartiallyFailed;Failed
+// BackupState is a state in backup phase
+
+type BackupState string
 
 const (
 	// BackupPhaseInit indicates that current backup object is New
 	BackupPhaseInit BackupPhase = "New"
 
-	// BackupPhaseFailedValidation indicates that backup object has validation issues
-	BackupPhaseFailedValidation BackupPhase = "FailedValidation"
+	// BackupPhaseMetadata indicates that metadata are getting backup
+	BackupPhaseMetadata BackupPhase = "BackupMetadata"
 
-	// BackupPhaseInProgress indicates that backup is executing by controller's
-	BackupPhaseInProgress BackupPhase = "InProgress"
+	// BackupPhaseVolume indicates that volume are getting backup
+	BackupPhaseVolume BackupPhase = "BackupVolume"
 
 	// BackupPhaseCompleted indicates that backup is successfully completed
 	BackupPhaseCompleted BackupPhase = "Completed"
 
-	// BackupPhasePartiallyFailed indicates that some of the backup items are not backuped successfully
-	BackupPhasePartiallyFailed BackupPhase = "PartiallyFailed"
-
-	// BackupPhaseFailed indicates that backup is failed due to some errors
-	BackupPhaseFailed BackupPhase = "Failed"
-
 	// BackupPhaseDeleting indicates that backup and all its associated data are being deleted
 	BackupPhaseDeleting BackupPhase = "Deleting"
+
+	// BackupStateFailedValidation indicates that backup object has validation issues
+	BackupStateFailedValidation BackupState = "FailedValidation"
+
+	// BackupStateInProgress indicates that backup phase is in progress
+	BackupStateInProgress BackupState = "InProgress"
+
+	// BackupStatePartiallyFailed indicates that some backup items are not backed up successfully
+	BackupStatePartiallyFailed BackupState = "PartiallyFailed"
+
+	// BackupStateFailed indicates that backup phase is failed due to some errors
+	BackupStateFailed BackupState = "Failed"
 )
 
 type BackupStatus struct {
-	// Phase is the current state of the backup
+	// Phase is the current phase of the backup
 	// +optional
 	Phase BackupPhase `json:"phase,omitempty"`
+
+	// State is the current state in phase backup
+	// +optional
+	State BackupState `json:"state,omitempty"`
 
 	// LastBackup defines the last backup time
 	// +optional
@@ -191,7 +217,7 @@ type BackupStatus struct {
 
 	// Conditions tells the current state of a resource that is backing up
 	// +optional
-	Conditions []BackupCondition `json:"conditions,omitempty"`
+	Resources []BackupResource `json:"resources,omitempty"`
 
 	// StartTimestamp is defines time when backup started
 	// +optional

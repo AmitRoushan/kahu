@@ -57,7 +57,17 @@ spec:
                 description: ExcludedResources is a list of all resources excluded
                   for backup
                 items:
-                  type: string
+                  properties:
+                    isRegex:
+                      type: boolean
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
                 type: array
               includedNamespaces:
                 description: IncludeNamespaces is a list of all namespaces included
@@ -75,7 +85,17 @@ spec:
                 description: IncludedResources is a list of all resources included
                   for backup. If empty, all resources are included
                 items:
-                  type: string
+                  properties:
+                    isRegex:
+                      type: boolean
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
                 type: array
               label:
                 description: Label is used to filter the resources
@@ -129,25 +149,25 @@ spec:
                 description: PostExecHook is a hook which should be executed after
                   backup finished
                 properties:
-                  excludedNamespaces:
+                  excludeNamespaces:
                     description: ExcludedNamespaces is a list of all namespaces excluded
                       for hook
                     items:
                       type: string
                     type: array
-                  excludedResources:
+                  excludeResources:
                     description: ExcludedResources is a list of all resources excluded
                       for backup
                     items:
                       type: string
                     type: array
-                  includedNamespaces:
+                  includeNamespaces:
                     description: IncludedNamespaces is a list of all namespaces included
                       for hook. If empty, all namespaces are included
                     items:
                       type: string
                     type: array
-                  includedResources:
+                  includeResources:
                     description: IncludedResources is a list of all resources included
                       for hook. If empty, all resources are included
                     items:
@@ -204,25 +224,25 @@ spec:
                 description: PreExecHook is a hook which should be executed before
                   backup starts
                 properties:
-                  excludedNamespaces:
+                  excludeNamespaces:
                     description: ExcludedNamespaces is a list of all namespaces excluded
                       for hook
                     items:
                       type: string
                     type: array
-                  excludedResources:
+                  excludeResources:
                     description: ExcludedResources is a list of all resources excluded
                       for backup
                     items:
                       type: string
                     type: array
-                  includedNamespaces:
+                  includeNamespaces:
                     description: IncludedNamespaces is a list of all namespaces included
                       for hook. If empty, all namespaces are included
                     items:
                       type: string
                     type: array
-                  includedResources:
+                  includeResources:
                     description: IncludedResources is a list of all resources included
                       for hook. If empty, all resources are included
                     items:
@@ -289,11 +309,24 @@ spec:
             type: object
           status:
             properties:
-              conditions:
+              lastBackup:
+                description: LastBackup defines the last backup time
+                format: date-time
+                type: string
+              phase:
+                description: Phase is the current phase of the backup
+                enum:
+                - New
+                - BackupMetadata
+                - BackupVolume
+                - Deleting
+                - Completed
+                type: string
+              resources:
                 description: Conditions tells the current state of a resource that
                   is backing up
                 items:
-                  description: BackupCondition indicates the current state of a resource
+                  description: BackupResource indicates the current state of a resource
                     that is backing up
                   properties:
                     apiVersion:
@@ -317,25 +350,18 @@ spec:
                       type: string
                   type: object
                 type: array
-              lastBackup:
-                description: LastBackup defines the last backup time
-                format: date-time
-                type: string
-              phase:
-                description: Phase is the current state of the backup
-                enum:
-                - New
-                - FailedValidation
-                - InProgress
-                - Completed
-                - PartiallyFailed
-                - Failed
-                - Deleting
-                type: string
               startTimestamp:
                 description: StartTimestamp is defines time when backup started
                 format: date-time
                 nullable: true
+                type: string
+              state:
+                description: State is the current state in phase backup
+                enum:
+                - FailedValidation
+                - InProgress
+                - PartiallyFailed
+                - Failed
                 type: string
               validationErrors:
                 description: ValidationErrors is a list of erros which are founded

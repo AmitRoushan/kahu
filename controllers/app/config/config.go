@@ -25,8 +25,7 @@ import (
 
 	"github.com/soda-cdm/kahu/client"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
-	"github.com/soda-cdm/kahu/client/informers/externalversions"
-	"github.com/soda-cdm/kahu/controllers/backup"
+	kahuinformer "github.com/soda-cdm/kahu/client/informers/externalversions"
 	"github.com/soda-cdm/kahu/discovery"
 )
 
@@ -36,11 +35,10 @@ const (
 )
 
 type Config struct {
-	ControllerWorkers      int
-	EnableLeaderElection   bool
-	DisableControllers     []string
-	KahuClientConfig       client.Config
-	BackupControllerConfig backup.Config
+	ControllerWorkers    int
+	EnableLeaderElection bool
+	DisableControllers   []string
+	KahuClientConfig     client.Config
 }
 
 type CompletedConfig struct {
@@ -48,7 +46,7 @@ type CompletedConfig struct {
 	ClientFactory    client.Factory
 	KubeClient       kubernetes.Interface
 	KahuClient       versioned.Interface
-	KahuInformer     externalversions.SharedInformerFactory
+	KahuInformer     kahuinformer.SharedInformerFactory
 	DynamicClient    dynamic.Interface
 	DiscoveryHelper  discovery.DiscoveryHelper
 	EventBroadcaster record.EventBroadcaster
@@ -90,7 +88,7 @@ func (cfg *Config) Complete() (*CompletedConfig, error) {
 		DynamicClient:    dynamicClient,
 		DiscoveryHelper:  discoveryHelper,
 		EventBroadcaster: eventBroadcaster,
-		KahuInformer:     externalversions.NewSharedInformerFactoryWithOptions(kahuClient, 0),
+		KahuInformer:     kahuinformer.NewSharedInformerFactoryWithOptions(kahuClient, 0),
 	}, nil
 }
 
