@@ -159,37 +159,53 @@ type BackupCondition struct {
 	Status string `json:"status,omitempty"`
 }
 
-// BackupPhase is a state of backup
-// +kubebuilder:validation:Enum=New;FailedValidation;InProgress;Completed;PartiallyFailed;Failed;Deleting
+// +kubebuilder:validation:Enum=New;BackupMetadata;BackupVolume;Deleting;Completed
+// BackupPhase is a phase of backup
+
 type BackupPhase string
+
+// +kubebuilder:validation:Enum=FailedValidation;InProgress;PartiallyFailed;Failed
+// BackupState is a state in backup phase
+
+type BackupState string
 
 const (
 	// BackupPhaseInit indicates that current backup object is New
 	BackupPhaseInit BackupPhase = "New"
 
-	// BackupPhaseFailedValidation indicates that backup object has validation issues
-	BackupPhaseFailedValidation BackupPhase = "FailedValidation"
+	// BackupPhaseMetadata indicates that metadata are getting backup
+	BackupPhaseMetadata BackupPhase = "BackupMetadata"
 
-	// BackupPhaseInProgress indicates that backup is executing by controller's
-	BackupPhaseInProgress BackupPhase = "InProgress"
+	// BackupPhaseVolume indicates that volume are getting backup
+	BackupPhaseVolume BackupPhase = "BackupVolume"
 
 	// BackupPhaseCompleted indicates that backup is successfully completed
 	BackupPhaseCompleted BackupPhase = "Completed"
 
-	// BackupPhasePartiallyFailed indicates that some of the backup items are not backuped successfully
-	BackupPhasePartiallyFailed BackupPhase = "PartiallyFailed"
-
-	// BackupPhaseFailed indicates that backup is failed due to some errors
-	BackupPhaseFailed BackupPhase = "Failed"
-
 	// BackupPhaseDeleting indicates that backup and all its associated data are being deleted
 	BackupPhaseDeleting BackupPhase = "Deleting"
+
+	// BackupStateFailedValidation indicates that backup object has validation issues
+	BackupStateFailedValidation BackupState = "FailedValidation"
+
+	// BackupStateInProgress indicates that backup phase is in progress
+	BackupStateInProgress BackupState = "InProgress"
+
+	// BackupStatePartiallyFailed indicates that some backup items are not backed up successfully
+	BackupStatePartiallyFailed BackupState = "PartiallyFailed"
+
+	// BackupStateFailed indicates that backup phase is failed due to some errors
+	BackupStateFailed BackupState = "Failed"
 )
 
 type BackupStatus struct {
-	// Phase is the current state of the backup
+	// Phase is the current phase of the backup
 	// +optional
 	Phase BackupPhase `json:"phase,omitempty"`
+
+	// State is the current state in phase backup
+	// +optional
+	State BackupState `json:"state,omitempty"`
 
 	// LastBackup defines the last backup time
 	// +optional

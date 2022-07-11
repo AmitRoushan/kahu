@@ -336,20 +336,26 @@ spec:
                 format: date-time
                 type: string
               phase:
-                description: Phase is the current state of the backup
+                description: Phase is the current phase of the backup
                 enum:
                 - New
-                - FailedValidation
-                - InProgress
-                - Completed
-                - PartiallyFailed
-                - Failed
+                - BackupMetadata
+                - BackupVolume
                 - Deleting
+                - Completed
                 type: string
               startTimestamp:
                 description: StartTimestamp is defines time when backup started
                 format: date-time
                 nullable: true
+                type: string
+              state:
+                description: State is the current state in phase backup
+                enum:
+                - FailedValidation
+                - InProgress
+                - PartiallyFailed
+                - Failed
                 type: string
               validationErrors:
                 description: ValidationErrors is a list of erros which are founded

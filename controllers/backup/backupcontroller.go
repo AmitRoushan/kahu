@@ -124,6 +124,11 @@ func (c *controller) doBackup(key string) error {
 		return err
 	}
 
+	if backup.Status.Phase == v1beta1.BackupPhaseCompleted {
+		// ignore backup with completed phase
+		return nil
+	}
+
 	c.logger.WithField(controllerOps, utils.NamespaceAndName(backup)).
 		Info("Setting up backup log")
 
@@ -133,9 +138,10 @@ func (c *controller) doBackup(key string) error {
 	backuplocation, err := c.backupLocationClient.Get(context.Background(), backupProvider, metav1.GetOptions{})
 	if err != nil {
 		c.logger.Errorf("failed to validate backup location, reason: %s", err)
-		backup.Status.Phase = v1beta1.BackupPhaseFailedValidation
+		backup.Status.State = v1beta1.BackupStateFailedValidation
+		backup.Status.Phase = v1beta1.BackupPhaseInit
 		backup.Status.ValidationErrors = append(backup.Status.ValidationErrors, fmt.Sprintf("%v", err))
-		c.updateStatus(backup, c.backupClient, backup.Status.Phase)
+		c.updateStatus(backup, c.backupClient, backup.Status)
 		return err
 	}
 	c.logger.Debugf("the provider name in backuplocation:%s", backuplocation)
@@ -144,26 +150,29 @@ func (c *controller) doBackup(key string) error {
 	prepareBackupReq := c.prepareBackupRequest(backup)
 
 	if len(prepareBackupReq.Status.ValidationErrors) > 0 {
-		prepareBackupReq.Status.Phase = v1beta1.BackupPhaseFailedValidation
-		c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+		prepareBackupReq.Status.State = v1beta1.BackupStateFailedValidation
+		c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status)
 		return err
 	} else {
-		prepareBackupReq.Status.Phase = v1beta1.BackupPhaseInProgress
+		prepareBackupReq.Status.State = v1beta1.BackupStateInProgress
+		prepareBackupReq.Status.Phase = v1beta1.BackupPhaseMetadata
+		prepareBackupReq.Status.ValidationErrors = []string{}
 	}
 	prepareBackupReq.Status.StartTimestamp = &metav1.Time{Time: time.Now()}
-	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status)
 
 	// start taking backup
 	err = c.runBackup(prepareBackupReq)
 	if err != nil {
-		prepareBackupReq.Status.Phase = v1beta1.BackupPhaseFailed
+		prepareBackupReq.Status.State = v1beta1.BackupStateFailed
 	} else {
+		prepareBackupReq.Status.State = v1beta1.BackupStateFailed
 		prepareBackupReq.Status.Phase = v1beta1.BackupPhaseCompleted
 	}
 	prepareBackupReq.Status.LastBackup = &metav1.Time{Time: time.Now()}
 
 	c.logger.Infof("completed backup with status: %s", prepareBackupReq.Status.Phase)
-	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status)
 	return err
 }
 
@@ -213,21 +222,40 @@ func (c *controller) prepareBackupRequest(backup *v1beta1.Backup) *PrepareBackup
 	return backupRequest
 }
 
-func (c *controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.BackupInterface, phase v1beta1.BackupPhase) {
+func (c *controller) updateStatus(bkp *v1beta1.Backup,
+	client kahuv1client.BackupInterface,
+	status v1beta1.BackupStatus) {
 	backup, err := client.Get(context.Background(), bkp.Name, metav1.GetOptions{})
 	if err != nil {
 		c.logger.Errorf("failed to get backup for updating status :%+s", err)
 		return
 	}
 
-	if backup.Status.Phase == v1beta1.BackupPhaseCompleted && phase == v1beta1.BackupPhaseFailed {
-		backup.Status.Phase = v1beta1.BackupPhasePartiallyFailed
-	} else if backup.Status.Phase == v1beta1.BackupPhasePartiallyFailed {
-		backup.Status.Phase = v1beta1.BackupPhasePartiallyFailed
-	} else {
-		backup.Status.Phase = phase
+	if backup.Status.Phase == v1beta1.BackupPhaseCompleted {
+		// no need to update as backup completed
+		return
 	}
-	backup.Status.ValidationErrors = bkp.Status.ValidationErrors
+
+	if status.State != "" && status.State != backup.Status.State {
+		backup.Status.State = status.State
+	}
+
+	if status.Phase != "" && status.Phase != backup.Status.Phase {
+		backup.Status.Phase = status.Phase
+	}
+
+	if len(status.ValidationErrors) > 0 {
+		backup.Status.ValidationErrors = status.ValidationErrors
+	}
+
+	if backup.Status.StartTimestamp == nil && status.StartTimestamp != nil {
+		backup.Status.StartTimestamp = status.StartTimestamp
+	}
+
+	if backup.Status.LastBackup == nil && status.LastBackup != nil {
+		backup.Status.LastBackup = status.LastBackup
+	}
+
 	_, err = client.UpdateStatus(context.Background(), backup, metav1.UpdateOptions{})
 	if err != nil {
 		c.logger.Errorf("failed to update backup status :%+s", err)
@@ -267,64 +295,64 @@ func (c *controller) runBackup(backup *PrepareBackup) error {
 			case "deployments":
 				err = c.deploymentBackup(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
+					backup.Status.State = v1beta1.BackupStateFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
-				c.updateStatus(backup.Backup, c.backupClient, backup.Status.Phase)
+				c.updateStatus(backup.Backup, c.backupClient, backup.Status)
 			case "configmaps":
 				err = c.getConfigMapS(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
+					backup.Status.State = v1beta1.BackupStateFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "persistentvolumeclaims":
 				err = c.getPersistentVolumeClaims(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
+					backup.Status.State = v1beta1.BackupStateFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "storageclasses":
 				err = c.getStorageClass(backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
+					backup.Status.State = v1beta1.BackupStateFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "services":
 				err = c.getServices(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
+					backup.Status.State = v1beta1.BackupStateFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "secrets":
 				err = c.getSecrets(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
+					backup.Status.State = v1beta1.BackupStateFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "endpoints":
 				err = c.getEndpoints(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
+					backup.Status.State = v1beta1.BackupStateFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "replicasets":
 				err = c.getReplicasets(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
+					backup.Status.State = v1beta1.BackupStateFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "statefulsets":
 				err = c.getStatefulsets(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
+					backup.Status.State = v1beta1.BackupStateFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
