@@ -34,11 +34,14 @@ const (
 )
 
 type Config struct {
-	ControllerWorkers    int           `json:"controllerWorkers"`
-	EnableLeaderElection bool          `json:"enableLeaderElection"`
-	DriverEndpoint       string        `json:"driverEndpoint"`
-	DisableControllers   []string      `json:"disableControllers"`
-	KahuClientConfig     client.Config `json:",inline"`
+	ControllerWorkers    int               `json:"controllerWorkers"`
+	EnableLeaderElection bool              `json:"enableLeaderElection"`
+	DriverEndpoint       string            `json:"driverEndpoint"`
+	DisableControllers   []string          `json:"disableControllers"`
+	KahuClientConfig     client.Config     `json:",inline"`
+	Provider             string            `json:"provider"`
+	Version              string            `json:"version,omitempty"`
+	Manifest             map[string]string `json:"manifest,omitempty"`
 }
 
 type CompletedConfig struct {

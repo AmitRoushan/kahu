@@ -41,19 +41,19 @@ spec:
                 description: EnableMetadataBackup tells whether volumes(PV) backup
                   should be taken or not
                 type: boolean
-              excludedNamespaces:
+              excludeNamespaces:
                 description: ExcludeNamespaces is a list of all namespaces excluded
                   for backup
                 items:
                   type: string
                 type: array
-              excludedProviders:
+              excludeProviders:
                 description: ExcludedProviders is a list of all provideres excluded
                   for backup
                 items:
                   type: string
                 type: array
-              excludedResources:
+              excludeResources:
                 description: ExcludedResources is a list of all resources excluded
                   for backup
                 items:
@@ -66,22 +66,21 @@ spec:
                       type: string
                   required:
                   - kind
-                  - name
                   type: object
                 type: array
-              includedNamespaces:
+              includeNamespaces:
                 description: IncludeNamespaces is a list of all namespaces included
                   for backup. If empty, all namespaces are included
                 items:
                   type: string
                 type: array
-              includedProviders:
+              includeProviders:
                 description: IncludedProviders is a list of all provideres included
                   for backup. If empty, all provideres are included
                 items:
                   type: string
                 type: array
-              includedResources:
+              includeResources:
                 description: IncludedResources is a list of all resources included
                   for backup. If empty, all resources are included
                 items:
@@ -94,7 +93,6 @@ spec:
                       type: string
                   required:
                   - kind
-                  - name
                   type: object
                 type: array
               label:
@@ -340,6 +338,9 @@ spec:
                         this object represents. Servers may infer this from the endpoint
                         the client submits requests to. Cannot be updated. In CamelCase.
                         More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                      type: string
+                    namespace:
+                      description: Namespace of the backup resource
                       type: string
                     resourceName:
                       description: ResourceName is a one of the item of backup that

@@ -17,6 +17,7 @@ limitations under the License.
 package backup
 
 import (
+	"context"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
@@ -128,52 +129,24 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.VolumeBackupContent)
 	logger := ctrl.logger.WithField("backup", backup.Name)
 	logger.Info("Validating volume backup")
 
-	//backupCopy := backup.DeepCopy()
-	//// start validating backup object
-	//// validate namespace input
-	//validationErrors := c.validateBackup(backupCopy)
-	//if len(validationErrors) > 0 {
-	//	errorString := strings.Join(validationErrors, ", ")
-	//	logger.Errorf("Backup validation failed. %s", errorString)
-	//	return fmt.Errorf("backup(%s) validation failed", backupCopy.Name)
+	volumes := make([]*v1.PersistentVolume, 0)
+	for _, vol := range backup.Spec.Volumes {
+		volumes = append(volumes, vol.DeepCopy())
+	}
+
+	_, err := ctrl.backupProviderClient.StartBackup(context.Background(), &pb.StartBackupRequest{
+		BackupName: backup.Name,
+		Pv:         volumes,
+	})
+	if err != nil {
+		ctrl.logger.Errorf("Unable to start backup. %s", err)
+		return err
+	}
+
+	//getStart := func(backupResponse *pb.StartBackupResponse,
+	//	vbcClient kahuclient.VolumeBackupContentInterface) error {
+	//
 	//}
-	//
-	//// Validate the Metadatalocation
-	//backupProvider := backup.Spec.MetadataLocation
-	//c.logger.Infof("preparing backup for provider: %s ", backupProvider)
-	//backuplocation, err := c.backupLocationLister.Get(backupProvider)
-	//if err != nil {
-	//	c.logger.Errorf("failed to validate backup location, reason: %s", err)
-	//	backup.Status.Phase = kahuapi.BackupPhaseFailedValidation
-	//	backup.Status.ValidationErrors = append(backup.Status.ValidationErrors, fmt.Sprintf("%v", err))
-	//	c.updateStatus(backup, c.backupClient, backup.Status.Phase)
-	//	return err
-	//}
-	//c.logger.Debugf("the provider name in backuplocation:%s", backuplocation)
-	//
-	//c.logger.Infof("Preparing backup request for Provider:%s", backupProvider)
-	//prepareBackupReq := c.prepareBackupRequest(backup)
-	//
-	//if len(prepareBackupReq.Status.ValidationErrors) > 0 {
-	//	prepareBackupReq.Status.Phase = kahuapi.BackupPhaseFailedValidation
-	//	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
-	//	return err
-	//} else {
-	//	prepareBackupReq.Status.Phase = kahuapi.BackupPhaseInProgress
-	//}
-	//prepareBackupReq.Status.StartTimestamp = &metav1.Time{Time: time.Now()}
-	//c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
-	//
-	//// start taking backup
-	//err = c.runBackup(prepareBackupReq)
-	//if err != nil {
-	//	prepareBackupReq.Status.Phase = kahuapi.BackupPhaseFailed
-	//} else {
-	//	prepareBackupReq.Status.Phase = kahuapi.BackupPhaseCompleted
-	//}
-	//prepareBackupReq.Status.LastBackup = &metav1.Time{Time: time.Now()}
-	//
-	//c.logger.Infof("completed backup with status: %s", prepareBackupReq.Status.Phase)
-	//c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+
 	return nil
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package discovery
 
 import (
+	"fmt"
 	"k8s.io/client-go/tools/cache"
 	"reflect"
 	"sync"
@@ -54,9 +55,9 @@ type DiscoveryHelper interface {
 	// Refresh updates API resource list with discovery helper
 	Refresh() error
 
-	NamespaceScopedResources() ([]*metav1.APIResource, error)
+	GetNamespaceScopedResources() ([]*metav1.APIResource, error)
 
-	ClusterScopedResources() ([]*metav1.APIResource, error)
+	GetClusterScopedResources() ([]*metav1.APIResource, error)
 }
 
 type discoverHelper struct {
@@ -89,12 +90,16 @@ func NewDiscoveryHelper(discoveryClient discovery.DiscoveryInterface,
 func getAPIResource(obj interface{}) (*metav1.APIResource, error) {
 	switch t := obj.(type) {
 	case metav1.APIResource:
-		return &t, nil
+		return t.DeepCopy(), nil
 	case *metav1.APIResource:
 		return t, nil
 	default:
 		return nil, errors.Errorf("invalid api resource format %s", reflect.TypeOf(t))
 	}
+}
+
+func gvkKey(gvk schema.GroupVersionKind) string {
+	return fmt.Sprintf("%s.%s/%s", gvk.Kind, gvk.Group, gvk.Version)
 }
 
 func gvkKeyFunc(obj interface{}) (string, error) {
@@ -103,44 +108,38 @@ func gvkKeyFunc(obj interface{}) (string, error) {
 		return "", err
 	}
 
-	return schema.GroupVersionKind{
+	return gvkKey(schema.GroupVersionKind{
 		Group:   resource.Group,
 		Version: resource.Version,
 		Kind:    resource.Kind,
-	}.String(), nil
+	}), nil
 }
 
 func newApiResourcesIndexers() cache.Indexers {
 	return cache.Indexers{
 		namespaceScopeIndex: func(obj interface{}) ([]string, error) {
+			keys := make([]string, 0)
 			resource, err := getAPIResource(obj)
 			if err != nil {
 				log.Warningf("invalid api resource %s", reflect.TypeOf(obj))
-				return []string{}, nil
+				return keys, nil
 			}
 			if resource.Namespaced {
-				return []string{schema.GroupVersionKind{
-					Group:   resource.Group,
-					Version: resource.Version,
-					Kind:    resource.Kind,
-				}.String()}, nil
+				keys = append(keys, resource.Kind)
 			}
-			return []string{}, nil
+			return keys, nil
 		},
 		clusterScopeIndex: func(obj interface{}) ([]string, error) {
+			keys := make([]string, 0)
 			resource, err := getAPIResource(obj)
 			if err != nil {
 				log.Warningf("invalid api resource %s", reflect.TypeOf(obj))
-				return []string{}, nil
+				return keys, nil
 			}
 			if !resource.Namespaced {
-				return []string{schema.GroupVersionKind{
-					Group:   resource.Group,
-					Version: resource.Version,
-					Kind:    resource.Kind,
-				}.String()}, nil
+				keys = append(keys, resource.Kind)
 			}
-			return []string{}, nil
+			return keys, nil
 		},
 	}
 }
@@ -207,6 +206,7 @@ func (helper *discoverHelper) Refresh() error {
 	)
 
 	//helper.byGroupVersionKind = make(map[schema.GroupVersionKind]metav1.APIResource)
+	helper.apiIndexedResources = cache.NewIndexer(gvkKeyFunc, newApiResourcesIndexers())
 	for _, resourceGroup := range helper.resources {
 		gv, err := schema.ParseGroupVersion(resourceGroup.GroupVersion)
 		if err != nil {
@@ -218,7 +218,8 @@ func (helper *discoverHelper) Refresh() error {
 			resource.Group = gvk.Group
 			resource.Version = gvk.Version
 			// helper.byGroupVersionKind[gvk] = resource
-			err := helper.apiIndexedResources.Add(&resource)
+
+			err := helper.apiIndexedResources.Add(resource.DeepCopy())
 			if err != nil {
 				log.Warningf("Failed to add gvk %s", gvk)
 			}
@@ -238,10 +239,6 @@ func (helper *discoverHelper) Refresh() error {
 
 	helper.k8sVersion = serverVersion
 
-	for _, value := range helper.apiIndexedResources.List() {
-		helper.logger.Infof("---> value %+v", value)
-	}
-
 	return nil
 }
 
@@ -251,41 +248,51 @@ func (helper *discoverHelper) Resources() []*metav1.APIResourceList {
 	return helper.resources
 }
 
-func (helper *discoverHelper) NamespaceScopedResources() ([]*metav1.APIResource, error) {
+func (helper *discoverHelper) GetNamespaceScopedResources() ([]*metav1.APIResource, error) {
+	helper.lock.RLock()
+	defer helper.lock.RUnlock()
 	gvks := helper.apiIndexedResources.ListIndexFuncValues(namespaceScopeIndex)
 
 	apiResources := make([]*metav1.APIResource, 0)
 	for _, gvk := range gvks {
-		obj, err := helper.apiIndexedResources.ByIndex(namespaceScopeIndex, gvk)
+		objs, err := helper.apiIndexedResources.ByIndex(namespaceScopeIndex, gvk)
 		if err != nil {
 			log.Errorf("unable to get namespace scoped index %s", gvk)
 			return nil, errors.Wrap(err, "unable to get namespace scoped index")
 		}
-		resource, err := getAPIResource(obj)
-		if err != nil {
-			return nil, errors.Wrap(err, "unable to get namespace scoped index")
+
+		for _, obj := range objs {
+			resource, err := getAPIResource(obj)
+			if err != nil {
+				return nil, errors.Wrap(err, "unable to get namespace scoped index")
+			}
+			apiResources = append(apiResources, resource)
 		}
-		apiResources = append(apiResources, resource)
 	}
 
 	return apiResources, nil
 }
 
-func (helper *discoverHelper) ClusterScopedResources() ([]*metav1.APIResource, error) {
+func (helper *discoverHelper) GetClusterScopedResources() ([]*metav1.APIResource, error) {
+	helper.lock.RLock()
+	defer helper.lock.RUnlock()
+
 	gvks := helper.apiIndexedResources.ListIndexFuncValues(clusterScopeIndex)
 
 	apiResources := make([]*metav1.APIResource, 0)
 	for _, gvk := range gvks {
-		obj, err := helper.apiIndexedResources.ByIndex(clusterScopeIndex, gvk)
+		objs, err := helper.apiIndexedResources.ByIndex(clusterScopeIndex, gvk)
 		if err != nil {
 			log.Errorf("unable to get namespace scoped index %s", gvk)
 			return nil, errors.Wrap(err, "unable to get cluster scoped index")
 		}
-		resource, err := getAPIResource(obj)
-		if err != nil {
-			return nil, errors.Wrap(err, "unable to get cluster scoped index")
+		for _, obj := range objs {
+			resource, err := getAPIResource(obj)
+			if err != nil {
+				return nil, errors.Wrap(err, "unable to get cluster scoped index")
+			}
+			apiResources = append(apiResources, resource)
 		}
-		apiResources = append(apiResources, resource)
 	}
 
 	return apiResources, nil

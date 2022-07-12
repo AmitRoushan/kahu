@@ -93,7 +93,8 @@ func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controll
 		mgr.kahuClient,
 		mgr.completeConfig.DynamicClient,
 		mgr.informerFactory,
-		mgr.EventBroadcaster)
+		mgr.EventBroadcaster,
+		mgr.completeConfig.DiscoveryHelper)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize backup controller. %s", err)
 	}

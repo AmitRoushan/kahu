@@ -30,7 +30,7 @@ type VolumeBackupContentSpec struct {
 	// Volume represents kubernetes volume to be backed up
 	// +optional
 	// +nullable
-	Volume []v1.PersistentVolume `json:"volumes"`
+	Volumes []v1.PersistentVolume `json:"volumes"`
 
 	// Volume provider for set of volumes
 	VolumeProvider *string `json:"volumeProvider,omitempty"`
@@ -67,9 +67,6 @@ type VolumeBackupContentStatus struct {
 
 	// +optional
 	FailureReason string `json:"failureReason,omitempty"`
-
-	// +optional
-	VolumeType string `json:"volumeType,omitempty"`
 }
 
 // +genclient

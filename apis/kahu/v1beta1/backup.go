@@ -41,8 +41,8 @@ type Backup struct {
 }
 
 type ResourceSpec struct {
-	// +required
-	Name string `json:"name"`
+	// +optional
+	Name string `json:"name,omitempty"`
 
 	// +required
 	Kind string `json:"kind"`
@@ -71,11 +71,11 @@ type BackupSpec struct {
 	// IncludedProviders is a list of all provideres included for backup. If empty, all provideres
 	// are included
 	// +optional
-	IncludeProviders []string `json:"includedProviders,omitempty"`
+	IncludeProviders []string `json:"includeProviders,omitempty"`
 
 	// ExcludedProviders is a list of all provideres excluded for backup
 	// +optional
-	ExcludeProviders []string `json:"excludedProviders,omitempty"`
+	ExcludeProviders []string `json:"excludeProviders,omitempty"`
 
 	// EnableMetadataBackup tells whether metadata backup should be taken or not
 	// +optional
@@ -88,20 +88,20 @@ type BackupSpec struct {
 	// IncludeNamespaces is a list of all namespaces included for backup. If empty, all namespaces
 	// are included
 	// +optional
-	IncludeNamespaces []string `json:"includedNamespaces,omitempty"`
+	IncludeNamespaces []string `json:"includeNamespaces,omitempty"`
 
 	// ExcludeNamespaces is a list of all namespaces excluded for backup
 	// +optional
-	ExcludeNamespaces []string `json:"excludedNamespaces,omitempty"`
+	ExcludeNamespaces []string `json:"excludeNamespaces,omitempty"`
 
 	// IncludedResources is a list of all resources included for backup. If empty, all resources
 	// are included
 	// +optional
-	IncludeResources []ResourceSpec `json:"includedResources,omitempty"`
+	IncludeResources []ResourceSpec `json:"includeResources,omitempty"`
 
 	// ExcludedResources is a list of all resources excluded for backup
 	// +optional
-	ExcludeResources []ResourceSpec `json:"excludedResources,omitempty"`
+	ExcludeResources []ResourceSpec `json:"excludeResources,omitempty"`
 
 	// Label is used to filter the resources
 	// +optional
@@ -154,6 +154,10 @@ type BackupResource struct {
 	// +optional
 	ResourceName string `json:"resourceName,omitempty"`
 
+	// Namespace of the backup resource
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+
 	// Status is a state of the resource
 	// +optional
 	Status string `json:"status,omitempty"`
@@ -182,17 +186,11 @@ const (
 	// BackupPhaseCompleted indicates that backup is successfully completed
 	BackupPhaseCompleted BackupPhase = "Completed"
 
-	// BackupPhaseDeleting indicates that backup and all its associated data are being deleted
-	BackupPhaseDeleting BackupPhase = "Deleting"
-
-	// BackupStateFailedValidation indicates that backup object has validation issues
-	BackupStateFailedValidation BackupState = "FailedValidation"
+	// BackupStateDeleting indicates that backup and all its associated data are being deleted
+	BackupStateDeleting BackupState = "Deleting"
 
 	// BackupStateInProgress indicates that backup phase is in progress
 	BackupStateInProgress BackupState = "InProgress"
-
-	// BackupStatePartiallyFailed indicates that some backup items are not backed up successfully
-	BackupStatePartiallyFailed BackupState = "PartiallyFailed"
 
 	// BackupStateFailed indicates that backup phase is failed due to some errors
 	BackupStateFailed BackupState = "Failed"

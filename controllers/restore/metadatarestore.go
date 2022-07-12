@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"google.golang.org/grpc"
 	"io"
 	"reflect"
 
@@ -198,37 +199,38 @@ func (ctx *restoreContext) fetchBackupInfo(restore *kahuapi.Restore) (*backupInf
 }
 
 func (ctx *restoreContext) fetchMetaServiceClient(backupProvider *kahuapi.Provider,
-	restore *kahuapi.Restore) (metaservice.MetaServiceClient, error) {
+	restore *kahuapi.Restore) (metaservice.MetaServiceClient, *grpc.ClientConn, error) {
 	if backupProvider.Spec.Type != kahuapi.ProviderTypeMetadata {
-		return nil, fmt.Errorf("invalid metadata provider type (%s)",
+		return nil, nil, fmt.Errorf("invalid metadata provider type (%s)",
 			backupProvider.Spec.Type)
 	}
 
 	// fetch service name
 	providerService, exist := backupProvider.Annotations[utils.BackupLocationServiceAnnotation]
 	if !exist {
-		return nil, fmt.Errorf("failed to get metadata provider(%s) service info",
+		return nil, nil, fmt.Errorf("failed to get metadata provider(%s) service info",
 			backupProvider.Name)
 	}
 
-	metaServiceClient, err := metaservice.GetMetaServiceClient(providerService)
+	metaServiceClient, grpcConn, err := metaservice.GetMetaServiceClient(providerService)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get metadata service client(%s)",
+		return nil, nil, fmt.Errorf("failed to get metadata service client(%s)",
 			providerService)
 	}
 
-	return metaServiceClient, nil
+	return metaServiceClient, grpcConn, nil
 }
 
 func (ctx *restoreContext) fetchBackupContent(backupProvider *kahuapi.Provider,
 	backupIdentifier *metaservice.BackupIdentifier,
 	restore *kahuapi.Restore) error {
 	// fetch meta service client
-	metaServiceClient, err := ctx.fetchMetaServiceClient(backupProvider, restore)
+	metaServiceClient, grpcConn, err := ctx.fetchMetaServiceClient(backupProvider, restore)
 	if err != nil {
 		ctx.logger.Errorf("Error fetching meta service client. %s", err)
 		return err
 	}
+	defer grpcConn.Close()
 
 	// fetch metadata backup file
 	restoreClient, err := metaServiceClient.Restore(context.TODO(), &metaservice.RestoreRequest{

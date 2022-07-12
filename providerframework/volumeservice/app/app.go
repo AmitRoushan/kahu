@@ -119,6 +119,7 @@ state towards the desired state`,
 				log.Fatalf("Failed to connect to volume backup driver. %s", err)
 				return
 			}
+			// defer grpcConn.
 
 			// probe driver till get ready
 			err = utils.Probe(grpcConn, defaultProbeTimeout)
@@ -138,6 +139,11 @@ state towards the desired state`,
 
 			// get volume backup driver
 			providerName := providerInfo.GetProvider()
+
+			// add provider info in config
+			completeConfig.Provider = providerName
+			completeConfig.Version = providerInfo.GetVersion()
+			completeConfig.Manifest = providerInfo.GetManifest()
 
 			log.Infof("Registering volume backup provider for %s", providerName)
 			// Register the volume provider
