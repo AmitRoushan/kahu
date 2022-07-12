@@ -186,52 +186,42 @@ service MetaBackup {
 
 message BackupIdentifier {
   // Persistent volume info
-  k8s.io.api.core.v1.PersistentVolume pv = 1;
+  string pv_name = 1;
 
    // Backup handle generated at provider
   string backup_handle = 2;
-
-  // Provider specific parameters passed in as opaque key-value pairs
-  map<string, string> backup_attributes = 3;
 }
 
-message VolumeIdentifier {
+message RestoreVolumeIdentifier {
   // volume handle created at provider
   string volume_handle = 1;
 
-  string pv_name = 2;
-
-  // Associated volume attributes
-  map<string, string> volume_attributes = 9;
+  string pvc_name = 2;
 }
 
-message OwnPVRequest {
-  // Persistent volume info
-  k8s.io.api.core.v1.PersistentVolume pv = 1;
-}
+message RestoreIdentifier {
+  // volume handle created at provider
+  k8s.io.api.core.v1.PersistentVolumeClaim pvc = 1;
 
-message OwnPVResponse {
-  // Indicates if PV is owned by given provider or not
-  google.protobuf.BoolValue success = 1;
+  string backup_handle = 2;
 }
-
 
 message StartBackupRequest {
   // Required field
   repeated k8s.io.api.core.v1.PersistentVolume pv = 1;
 
   // Backup name
-  string backup_name = 2;
+  string backup_content_name = 2;
 
   // Optional provider specific parameters passed in as opaque key-value pairs
-  map<string, string> parameters = 3;
+  map<string, string> parameters = 9;
 }
 
 message StartBackupResponse {
   // Required field
   repeated BackupIdentifier backup_info = 1;
 
-  repeated string errors = 2;
+  repeated string errors = 9;
 }
 
 message DeleteBackupRequest {
@@ -239,102 +229,112 @@ message DeleteBackupRequest {
   repeated BackupIdentifier backup_info = 1;
 
   // Backup name
-  string backup_name = 2;
+  string backup_content_name = 2;
 
   // Optional provider specific parameters passed in as opaque key-value pairs
-  map<string, string> parameters = 3;
+  map<string, string> parameters = 9;
 }
 
 message DeleteBackupResponse {
   // Required field
   google.protobuf.BoolValue success = 1;
 
-  repeated string errors = 2;
+  repeated string errors = 9;
 }
 
-message CancelRequest {
+message CancelBackupRequest {
   // Backup or restore identifier based on the request
-  string identifier = 1;
+  repeated string backup_handle = 1;
 
   // Optional provider specific parameters passed in as opaque key-value pairs
-  map<string, string> parameters = 2;
+  map<string, string> parameters = 9;
 }
 
-message CancelResponse {
+message CancelBackupResponse {
   // Required field
   google.protobuf.BoolValue success = 1;
 
-  repeated string errors = 2;
+  repeated string errors = 9;
 }
 
 message GetBackupStatRequest {
   // Backup identifier returned in StartBackupResponse
-  BackupIdentifier backup_info = 1;
+  repeated string backup_handle = 1;
 
   // Optional provider specific parameters passed in as opaque key-value pairs
-  map<string, string> parameters = 2;
+  map<string, string> parameters = 9;
+}
+
+message BackupStat {
+  // represents PV getting backed up
+  string backup_handle = 1;
+
+  // optional
+  int64 total_bytes = 2;
+
+  // optional
+  int64 bytes_done = 3;
 }
 
 message GetBackupStatResponse {
-  // optional
-  int64 total_bytes = 1;
-
-  // optional
-  int64 bytes_done = 2;
+  repeated BackupStat backup_stats = 1;
 }
 
 message CreateVolumeFromBackupRequest {
   // Required field
-  repeated BackupIdentifier backup_info = 1;
+  repeated RestoreIdentifier restore_info = 1;
 
-  // Backup name
-  string backup_name = 2;
+  // restore content name
+  string restore_content_name = 2;
 
   // Optional provider specific parameters passed in as opaque key-value pairs
-  map<string, string> parameters = 3;
+  map<string, string> parameters = 9;
 }
 
 message CreateVolumeFromBackupResponse {
   // Required field
-  repeated VolumeIdentifier volume_identifiers = 1;
+  repeated RestoreVolumeIdentifier volume_identifier = 1;
 
-  repeated string errors = 2;
+  repeated string errors = 9;
 }
 
-message AddVolumeAttributesRequest {
+message CancelRestoreResponse {
   // Required field
-  k8s.io.api.core.v1.PersistentVolume pv = 1;
+  google.protobuf.BoolValue success = 1;
 
-  // Optional provider specific parameters passed in as opaque key-value pairs
-  map<string, string> parameters = 2;
-}
-
-message AddVolumeAttributesResponse {
-  // Required field
-  k8s.io.api.core.v1.PersistentVolume pv = 1;
+  repeated string errors = 9;
 }
 
 message GetRestoreStatRequest {
   // Volume identifier returned from CreateVolumeFromBackupResponse
-  VolumeIdentifier volume_identifiers = 1;
+  repeated string restore_volume_handle = 1;
 
   // Optional provider specific parameters passed in as opaque key-value pairs
-  map<string, string> parameters = 2;
+  map<string, string> parameters = 9;
+}
+
+message RestoreStat {
+  // represents PV getting backed up
+  string restore_volume_handle = 1;
+
+  // optional
+  int64 total_bytes = 2;
+
+  // optional
+  int64 bytes_done = 3;
 }
 
 message GetRestoreStatResponse {
-  // Total bytes to be restored, optional
-  int64 total_bytes = 1;
+  repeated RestoreStat restore_volume_stat = 1;
+}
 
-  // Total bytes restored, optional
-  int64 bytes_done = 2;
+message CancelRestoreRequest {
+  repeated string restore_volume_handle = 1;
+
+  map<string, string> parameters = 9;
 }
 
 service VolumeBackup {
-  // Check if volume is owned by given driver
-  rpc IsOwnPV(OwnPVRequest)
-      returns (OwnPVResponse) {}
-
   // Create backup of the provided volumes
   rpc StartBackup(StartBackupRequest)
       returns (StartBackupResponse) {}
@@ -344,8 +344,8 @@ service VolumeBackup {
       returns (DeleteBackupResponse) {}
 
   // Cancel given backup
-  rpc CancelBackup(CancelRequest)
-      returns (CancelResponse) {}
+  rpc CancelBackup(CancelBackupRequest)
+      returns (CancelBackupResponse) {}
 
   // Get backup statistics
   rpc GetBackupStat(GetBackupStatRequest)
@@ -355,13 +355,9 @@ service VolumeBackup {
   rpc CreateVolumeFromBackup(CreateVolumeFromBackupRequest)
       returns (CreateVolumeFromBackupResponse) {}
 
-  // Add attributes to the given volume
-  rpc AddVolumeAttributes(AddVolumeAttributesRequest)
-      returns (AddVolumeAttributesResponse) {}
-
-  // Cancel given restore
-  rpc CancelRestore(CancelRequest)
-      returns (CancelResponse) {}
+   // Cancel given restore
+  rpc CancelRestore(CancelRestoreRequest)
+      returns (CancelRestoreResponse) {}
 
   // Get restore statistics
   rpc GetRestoreStat(GetRestoreStatRequest)

@@ -29,9 +29,13 @@ import (
 	pb "github.com/soda-cdm/kahu/providers/lib/go"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"sync"
+	"time"
 )
 
 const (
@@ -129,24 +133,113 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.VolumeBackupContent)
 	logger := ctrl.logger.WithField("backup", backup.Name)
 	logger.Info("Validating volume backup")
 
-	volumes := make([]*v1.PersistentVolume, 0)
-	for _, vol := range backup.Spec.Volumes {
-		volumes = append(volumes, vol.DeepCopy())
+	if backup.DeletionTimestamp != nil {
+		if err := ctrl.deleteVolumeBackup(backup); err != nil {
+			ctrl.logger.Errorf("Unable to delete volume backup. %s", err)
+			return err
+		}
+		return nil
 	}
 
-	_, err := ctrl.backupProviderClient.StartBackup(context.Background(), &pb.StartBackupRequest{
-		BackupName: backup.Name,
-		Pv:         volumes,
-	})
-	if err != nil {
-		ctrl.logger.Errorf("Unable to start backup. %s", err)
-		return err
+	getVolumeBackupStat := func(ctx context.Context, backupResponse *pb.StartBackupResponse,
+		backupClient pb.VolumeBackupClient) error {
+		backupClient.GetBackupStat(ctx, &pb.GetBackupStatRequest{
+			BackupName:
+		})
 	}
 
-	//getStart := func(backupResponse *pb.StartBackupResponse,
-	//	vbcClient kahuclient.VolumeBackupContentInterface) error {
-	//
-	//}
+	switch backup.Status.Phase {
+	case "", kahuapi.VolumeBackupContentPhaseInit:
+		volumes := make([]*v1.PersistentVolume, 0)
+		for _, vol := range backup.Spec.Volumes {
+			volumes = append(volumes, vol.DeepCopy())
+		}
+		response, err := ctrl.backupProviderClient.StartBackup(context.Background(), &pb.StartBackupRequest{
+			BackupName: backup.Name,
+			Pv:         volumes,
+		})
+		if err != nil {
+			ctrl.logger.Errorf("Unable to start backup. %s", err)
+			backup, err = ctrl.updateStatus(backup, kahuapi.VolumeBackupContentStatus{
+				Phase: kahuapi.VolumeBackupContentPhaseFailed,
+				FailureReason: fmt.Sprintf("Unable to start backup"),
+			})
+			return err
+		}
+
+		backup, err = ctrl.updateStatus(backup, kahuapi.VolumeBackupContentStatus{
+			Phase: kahuapi.VolumeBackupContentPhaseInProgress,
+		})
+
+		var wg sync.WaitGroup
+		ctx, cancel := context.WithCancel(context.Background())
+		defer func() {
+			ctrl.logger.Info("Waiting for backup to finish")
+
+			// shut down worker queue
+			ctrl.queue.ShutDown()
+
+			// wait for workers to shut down
+			wg.Wait()
+			ctrl.logger.Info("All workers have finished")
+		}()
+
+		go func() {
+			wait.Until(func() {
+				if err := getVolumeBackupStat(ctx, response, ctrl.volumeBackupClient); err != nil {
+					ctrl.logger.Errorf("failed to get backup stat")
+					return
+				}
+
+				<-ctx.Done()
+			}, time.Second, ctx.Done())
+			wg.Done()
+		}()
+
+		select {
+
+		}
+
+	case kahuapi.VolumeBackupContentPhaseInProgress:
+
+	}
+
+
+
+
 
 	return nil
+}
+
+func (ctrl *controller) deleteVolumeBackup(backup *kahuapi.VolumeBackupContent) error {
+	ctrl.logger.Infof("Deleting volume backup content %s", backup.Name)
+	return nil
+}
+
+func (ctrl *controller) updateStatus(backup *kahuapi.VolumeBackupContent,
+	status kahuapi.VolumeBackupContentStatus) (*kahuapi.VolumeBackupContent, error) {
+	ctrl.logger.Infof("Updating status: volume backup content %s", backup.Name)
+	currentCopy, err := ctrl.volumeBackupLister.Get(backup.Name)
+	if err != nil {
+		ctrl.logger.Errorf("Unable to update status. %s", err)
+		return nil, err
+	}
+
+	if currentCopy.Status.Phase != "" &&
+		status.Phase != currentCopy.Status.Phase {
+		currentCopy.Status.Phase = status.Phase
+	}
+
+	if status.FailureReason != ""  {
+		currentCopy.Status.FailureReason = status.FailureReason
+	}
+
+	if currentCopy.Status.StartTimestamp == nil &&
+		status.StartTimestamp != nil  {
+		currentCopy.Status.StartTimestamp = status.StartTimestamp
+	}
+
+	return  ctrl.volumeBackupClient.UpdateStatus(context.TODO(),
+		currentCopy,
+		metav1.UpdateOptions{})
 }
