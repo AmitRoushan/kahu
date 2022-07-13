@@ -18,16 +18,24 @@ package backup
 
 import (
 	"context"
+	"fmt"
+
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 )
 
 const (
 	volumeContentBackupLabel = "kahu.io/backup-name"
 )
+
+func getVBCName(backupName string) string {
+	return fmt.Sprintf("%s-%s", backupName, uuid.New().String())
+}
 
 func (ctrl *controller) processVolumeBackup(backup *kahuapi.Backup, ctx Context) error {
 	// process backup for metadata and volume backup
@@ -79,6 +87,7 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.Backup, ctx Context)
 				Labels: map[string]string{
 					volumeContentBackupLabel: backup.Name,
 				},
+				Name: getVBCName(backup.Name),
 			},
 			Spec: kahuapi.VolumeBackupContentSpec{
 				BackupName:     backup.Name,
