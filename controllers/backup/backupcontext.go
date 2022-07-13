@@ -352,8 +352,7 @@ func (ctx *backupContext) collectNamespacesWithBackupSpec() error {
 		Insert(defaultExcludedNamespaces...)
 
 	for _, namespace := range namespaces.Items {
-		if excludeList.Has(namespace.Name) ||
-			!includeList.Has(namespace.Name) {
+		if excludeList.Has(namespace.Name){
 			continue
 		}
 		if includeList.Len() > 0 &&
