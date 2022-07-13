@@ -1170,8 +1170,6 @@ spec:
                 format: date-time
                 nullable: true
                 type: string
-              volumeType:
-                type: string
             type: object
         type: object
     served: true

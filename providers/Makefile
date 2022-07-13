@@ -18,6 +18,7 @@ all: build
 ########################################################################
 ##                           BUILD GRPC INTERFACE                     ##
 ########################################################################
+GOPATH := $(shell pwd)/../_output/go
 PROVIDER_SERVICE_PROTO := proto/providerservice.proto
 PROVIDER_PROJECT_PATH := $(GOPATH)/src/github.com/soda-cdm/kahu/providers
 PROVIDER_SERVICE_GO := providerservice.pb.go

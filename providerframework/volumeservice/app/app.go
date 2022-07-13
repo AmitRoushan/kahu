@@ -119,7 +119,6 @@ state towards the desired state`,
 				log.Fatalf("Failed to connect to volume backup driver. %s", err)
 				return
 			}
-			// defer grpcConn.
 
 			// probe driver till get ready
 			err = utils.Probe(grpcConn, defaultProbeTimeout)
@@ -262,7 +261,8 @@ func Run(ctx context.Context,
 	backupController, err := backup.NewController(config.KahuClient,
 		config.InformerFactory,
 		config.EventBroadcaster,
-		backupProviderClient)
+		backupProviderClient,
+		ctx.Done())
 	if err != nil {
 		return fmt.Errorf("failed to initialize volume backup controller. %s", err)
 	}

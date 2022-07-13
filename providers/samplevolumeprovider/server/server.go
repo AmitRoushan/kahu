@@ -41,11 +41,6 @@ func NewVolumeBackupService(ctx context.Context) *service {
 	}
 }
 
-// IsOwnPV checks if volume is owned by given driver
-func (svc *service) IsOwnPV(context.Context, *pb.OwnPVRequest) (*pb.OwnPVResponse, error) {
-	return nil, nil
-}
-
 // StartBackup create backup of the provided volumes
 func (svc *service) StartBackup(context.Context, *pb.StartBackupRequest) (*pb.StartBackupResponse, error) {
 	return nil, nil
@@ -57,7 +52,7 @@ func (svc *service) DeleteBackup(context.Context, *pb.DeleteBackupRequest) (*pb.
 }
 
 // CancelBackup cancel given backup
-func (svc *service) CancelBackup(context.Context, *pb.CancelRequest) (*pb.CancelResponse, error) {
+func (svc *service) CancelBackup(context.Context, *pb.CancelBackupRequest) (*pb.CancelBackupResponse, error) {
 	return nil, nil
 }
 
@@ -72,15 +67,9 @@ func (svc *service) CreateVolumeFromBackup(context.Context,
 	return nil, nil
 }
 
-// Add attributes to the given volume
-func (svc *service) AddVolumeAttributes(context.Context,
-	*pb.AddVolumeAttributesRequest) (*pb.AddVolumeAttributesResponse, error) {
-	return nil, nil
-}
-
 // Cancel given restore
 func (svc *service) CancelRestore(context.Context,
-	*pb.CancelRequest) (*pb.CancelResponse, error) {
+	*pb.CancelRestoreRequest) (*pb.CancelRestoreResponse, error) {
 	return nil, nil
 }
 

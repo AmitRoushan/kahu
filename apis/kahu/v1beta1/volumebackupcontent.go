@@ -48,6 +48,16 @@ const (
 	VolumeBackupContentPhaseDeleting   VolumeBackupContentPhase = "Deleting"
 )
 
+type VolumeState struct {
+	VolumeName string `json:"volumeName,omitempty"`
+
+	BackupHandle string `json:"backupHandle,omitempty"`
+
+	TotalBytes int64 `json:"totalBytes,omitempty"`
+
+	BytesDone int64 `json:"bytesDone,omitempty"`
+}
+
 // VolumeBackupContentStatus defines the observed state of VolumeBackupContent
 type VolumeBackupContentStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
@@ -67,6 +77,9 @@ type VolumeBackupContentStatus struct {
 
 	// +optional
 	FailureReason string `json:"failureReason,omitempty"`
+
+	// +optional
+	BackupState []VolumeState `json:"backupState,omitempty"`
 }
 
 // +genclient

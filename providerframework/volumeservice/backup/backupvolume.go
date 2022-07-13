@@ -20,22 +20,22 @@ import (
 	"context"
 	"fmt"
 	log "github.com/sirupsen/logrus"
+	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
+	"time"
+
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
 	kahuclient "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/informers/externalversions"
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/controllers"
+	"github.com/soda-cdm/kahu/providerframework/volumeservice/reconciler"
 	pb "github.com/soda-cdm/kahu/providers/lib/go"
-	v1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
-	"sync"
-	"time"
 )
 
 const (
@@ -43,25 +43,27 @@ const (
 )
 
 type controller struct {
-	logger               log.FieldLogger
-	genericController    controllers.Controller
-	volumeBackupClient   kahuclient.VolumeBackupContentInterface
-	volumeBackupLister   kahulister.VolumeBackupContentLister
-	eventRecorder        record.EventRecorder
-	backupProviderClient pb.VolumeBackupClient
+	logger             log.FieldLogger
+	genericController  controllers.Controller
+	volumeBackupClient kahuclient.VolumeBackupContentInterface
+	volumeBackupLister kahulister.VolumeBackupContentLister
+	eventRecorder      record.EventRecorder
+	providerClient     pb.VolumeBackupClient
+	reconciler         reconciler.Reconciler
 }
 
 func NewController(kahuClient versioned.Interface,
 	informer externalversions.SharedInformerFactory,
 	eventBroadcaster record.EventBroadcaster,
-	backupProviderClient pb.VolumeBackupClient) (controllers.Controller, error) {
+	backupProviderClient pb.VolumeBackupClient,
+	stopChan <-chan struct{}) (controllers.Controller, error) {
 
 	logger := log.WithField("controller", controllerName)
 	backupController := &controller{
-		logger:               logger,
-		volumeBackupClient:   kahuClient.KahuV1beta1().VolumeBackupContents(),
-		volumeBackupLister:   informer.Kahu().V1beta1().VolumeBackupContents().Lister(),
-		backupProviderClient: backupProviderClient,
+		logger:             logger,
+		volumeBackupClient: kahuClient.KahuV1beta1().VolumeBackupContents(),
+		volumeBackupLister: informer.Kahu().V1beta1().VolumeBackupContents().Lister(),
+		providerClient:     backupProviderClient,
 	}
 
 	// construct controller interface to process worker queue
@@ -92,6 +94,15 @@ func NewController(kahuClient versioned.Interface,
 
 	// reference back
 	backupController.genericController = genericController
+
+	backupController.reconciler = reconciler.NewReconciler(
+		1*time.Second,
+		logger.WithField("source", "reconciler"),
+		backupController.volumeBackupClient,
+		backupController.volumeBackupLister,
+		backupController.providerClient)
+
+	go backupController.reconciler.Run(stopChan)
 	return genericController, err
 }
 
@@ -129,9 +140,7 @@ func (ctrl *controller) processDeleteVolumeBackup(backup *kahuapi.VolumeBackupCo
 }
 
 func (ctrl *controller) processVolumeBackup(backup *kahuapi.VolumeBackupContent) error {
-	// setting up backup logger
 	logger := ctrl.logger.WithField("backup", backup.Name)
-	logger.Info("Validating volume backup")
 
 	if backup.DeletionTimestamp != nil {
 		if err := ctrl.deleteVolumeBackup(backup); err != nil {
@@ -141,72 +150,42 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.VolumeBackupContent)
 		return nil
 	}
 
-	getVolumeBackupStat := func(ctx context.Context, backupResponse *pb.StartBackupResponse,
-		backupClient pb.VolumeBackupClient) error {
-		backupClient.GetBackupStat(ctx, &pb.GetBackupStatRequest{
-			BackupName:
-		})
-	}
-
 	switch backup.Status.Phase {
 	case "", kahuapi.VolumeBackupContentPhaseInit:
 		volumes := make([]*v1.PersistentVolume, 0)
 		for _, vol := range backup.Spec.Volumes {
 			volumes = append(volumes, vol.DeepCopy())
 		}
-		response, err := ctrl.backupProviderClient.StartBackup(context.Background(), &pb.StartBackupRequest{
-			BackupName: backup.Name,
-			Pv:         volumes,
+		response, err := ctrl.providerClient.StartBackup(context.Background(), &pb.StartBackupRequest{
+			BackupContentName: backup.Name,
+			Pv:                volumes,
 		})
 		if err != nil {
 			ctrl.logger.Errorf("Unable to start backup. %s", err)
 			backup, err = ctrl.updateStatus(backup, kahuapi.VolumeBackupContentStatus{
-				Phase: kahuapi.VolumeBackupContentPhaseFailed,
+				Phase:         kahuapi.VolumeBackupContentPhaseFailed,
 				FailureReason: fmt.Sprintf("Unable to start backup"),
 			})
 			return err
 		}
 
-		backup, err = ctrl.updateStatus(backup, kahuapi.VolumeBackupContentStatus{
-			Phase: kahuapi.VolumeBackupContentPhaseInProgress,
-		})
-
-		var wg sync.WaitGroup
-		ctx, cancel := context.WithCancel(context.Background())
-		defer func() {
-			ctrl.logger.Info("Waiting for backup to finish")
-
-			// shut down worker queue
-			ctrl.queue.ShutDown()
-
-			// wait for workers to shut down
-			wg.Wait()
-			ctrl.logger.Info("All workers have finished")
-		}()
-
-		go func() {
-			wait.Until(func() {
-				if err := getVolumeBackupStat(ctx, response, ctrl.volumeBackupClient); err != nil {
-					ctrl.logger.Errorf("failed to get backup stat")
-					return
-				}
-
-				<-ctx.Done()
-			}, time.Second, ctx.Done())
-			wg.Done()
-		}()
-
-		select {
-
+		backupState := make([]kahuapi.VolumeState, 0)
+		for _, backupIdentifier := range response.GetBackupInfo() {
+			backupState = append(backupState, kahuapi.VolumeState{
+				VolumeName:   backupIdentifier.GetPvName(),
+				BackupHandle: backupIdentifier.GetBackupHandle(),
+			})
 		}
 
-	case kahuapi.VolumeBackupContentPhaseInProgress:
+		// update backup status
+		backup, err = ctrl.updateStatus(backup, kahuapi.VolumeBackupContentStatus{
+			Phase:       kahuapi.VolumeBackupContentPhaseInProgress,
+			BackupState: backupState,
+		})
 
+	default:
+		logger.Infof("Ignoring volume backup state. The state gets handled by reconciler")
 	}
-
-
-
-
 
 	return nil
 }
@@ -230,16 +209,20 @@ func (ctrl *controller) updateStatus(backup *kahuapi.VolumeBackupContent,
 		currentCopy.Status.Phase = status.Phase
 	}
 
-	if status.FailureReason != ""  {
+	if status.FailureReason != "" {
 		currentCopy.Status.FailureReason = status.FailureReason
 	}
 
 	if currentCopy.Status.StartTimestamp == nil &&
-		status.StartTimestamp != nil  {
+		status.StartTimestamp != nil {
 		currentCopy.Status.StartTimestamp = status.StartTimestamp
 	}
 
-	return  ctrl.volumeBackupClient.UpdateStatus(context.TODO(),
+	if status.BackupState != nil {
+		currentCopy.Status.BackupState = status.BackupState
+	}
+
+	return ctrl.volumeBackupClient.UpdateStatus(context.TODO(),
 		currentCopy,
 		metav1.UpdateOptions{})
 }
