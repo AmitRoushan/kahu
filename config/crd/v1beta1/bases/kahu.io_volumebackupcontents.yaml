@@ -1151,6 +1151,21 @@ spec:
           status:
             description: VolumeBackupContentStatus defines the observed state of VolumeBackupContent
             properties:
+              backupState:
+                items:
+                  properties:
+                    backupHandle:
+                      type: string
+                    bytesDone:
+                      format: int64
+                      type: integer
+                    totalBytes:
+                      format: int64
+                      type: integer
+                    volumeName:
+                      type: string
+                  type: object
+                type: array
               completionTimestamp:
                 format: date-time
                 nullable: true
