@@ -1,0 +1,192 @@
+/*
+Copyright 2022 The SODA Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package backup
+
+import (
+	"context"
+	"encoding/json"
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
+	"time"
+
+	jsonpatch "github.com/evanphx/json-patch"
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
+	kahuclient "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
+	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+)
+
+// Reconciler runs a periodic loop to reconcile the current state of volume back and update
+// backup annotation
+type Reconciler interface {
+	Run(stopCh <-chan struct{})
+}
+
+// newReconciler returns a new instance of Reconciler that waits loopPeriod
+// between successive executions.
+func newReconciler(
+	loopPeriod time.Duration,
+	logger log.FieldLogger,
+	volumeBackupLister kahulister.VolumeBackupContentLister,
+	backupClient kahuclient.BackupInterface,
+	backupLister kahulister.BackupLister) Reconciler {
+	return &reconciler{
+		loopPeriod:         loopPeriod,
+		logger:             logger,
+		volumeBackupLister: volumeBackupLister,
+		backupLister:       backupLister,
+		backupClient:       backupClient,
+	}
+}
+
+type reconciler struct {
+	loopPeriod         time.Duration
+	logger             log.FieldLogger
+	volumeBackupLister kahulister.VolumeBackupContentLister
+	backupClient       kahuclient.BackupInterface
+	backupLister       kahulister.BackupLister
+}
+
+func (rc *reconciler) Run(stopCh <-chan struct{}) {
+	wait.Until(rc.reconciliationLoopFunc(), rc.loopPeriod, stopCh)
+}
+
+func (rc *reconciler) reconciliationLoopFunc() func() {
+	return func() {
+		rc.reconcile()
+	}
+}
+
+// reconcile update backup with volume backup updates
+func (rc *reconciler) reconcile() {
+	backups, err := rc.backupLister.List(labels.Everything())
+	if err != nil {
+		rc.logger.Errorf("Unable to list backup list to reconcile")
+	}
+
+	for _, backup := range backups {
+		backupName := backup.Name
+		if !rc.isReconcileRequired(backup) {
+			rc.logger.Debugf("Skipping reconcile for backup %s", backupName)
+			return
+		}
+
+		// annotate with volume completeness if no volume for backup
+		vbContents, err := rc.volumeBackupLister.List(labels.Set{
+			volumeContentBackupLabel: backupName,
+		}.AsSelector())
+		if err != nil {
+			rc.logger.Errorf("Unable to list volume backup content for backup(%s). %s",
+				backupName, err)
+			continue
+		}
+
+		// may be lister not populated with volume backup contents
+		if rc.isBackupStatusHasVolume(backup) && len(vbContents) == 0 {
+			continue
+		}
+
+		volumesBackupDone := true
+		for _, vbs := range vbContents {
+			if vbs.Status.Phase != kahuapi.VolumeBackupContentPhaseCompleted {
+				volumesBackupDone = false
+				break
+			}
+		}
+
+		if !volumesBackupDone {
+			continue
+		}
+
+		err = rc.annotateVolumeCompleteness(backupName)
+		if err != nil {
+			rc.logger.Errorf("Unable to annotate backup(%s) with volume backup completeness", backupName)
+		}
+	}
+}
+
+func (rc *reconciler) isBackupStatusHasVolume(backup *kahuapi.Backup) bool {
+	for _, resource := range backup.Status.Resources {
+		if resource.Kind == PVCKind ||
+			resource.Kind == PVKind {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (rc *reconciler) isReconcileRequired(backup *kahuapi.Backup) bool {
+	// skip reconcile if backup getting deleted
+	// skip reconcile if backup.Status.Phase is not volume backup
+	// skip reconcile if volume backup completed
+	if backup.DeletionTimestamp != nil ||
+		backup.Status.Phase != kahuapi.BackupPhaseVolume ||
+		metav1.HasAnnotation(backup.ObjectMeta, annVolumeBackupCompleted) {
+		return false
+	}
+	return true
+}
+
+func (rc *reconciler) annotateVolumeCompleteness(
+	backupName string) error {
+	rc.logger.Infof("Annotating backup(%s) with volume backup completeness", backupName)
+
+	backup, err := rc.backupLister.Get(backupName)
+	if err != nil {
+		rc.logger.Errorf("Unable to update backup(%s) for volume completeness. %s",
+			backupName, err)
+		return errors.Wrap(err, "Unable to update backup")
+	}
+
+	_, ok := backup.Annotations[annVolumeBackupCompleted]
+	if ok {
+		rc.logger.Infof("Backup(%s) allready annotated for volume backup completeness", backupName)
+		return nil
+	}
+
+	backupClone := backup.DeepCopy()
+	backupClone.Annotations[annVolumeBackupCompleted] = "true"
+
+	origBytes, err := json.Marshal(backup)
+	if err != nil {
+		return errors.Wrap(err, "error marshalling backup")
+	}
+
+	updatedBytes, err := json.Marshal(backupClone)
+	if err != nil {
+		return errors.Wrap(err, "error marshalling updated backup")
+	}
+
+	patchBytes, err := jsonpatch.CreateMergePatch(origBytes, updatedBytes)
+	if err != nil {
+		return errors.Wrap(err, "error creating json merge patch for backup")
+	}
+
+	_, err = rc.backupClient.Patch(context.TODO(), backupName,
+		types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	if err != nil {
+		rc.logger.Error("Unable to update backup(%s) for volume completeness. %s",
+			backupName, err)
+		errors.Wrap(err, "error annotating volume backup completeness")
+	}
+
+	return nil
+}

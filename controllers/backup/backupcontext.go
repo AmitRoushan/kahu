@@ -40,23 +40,19 @@ import (
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 )
 
-const (
-	backupCacheNamespaceIndex             = "backup-cache-namespace-index"
-	backupCachePVCIndex                   = "backup-cache-pvc-index"
-	backupCachePVIndex                    = "backup-cache-pv-index"
-	backupCacheObjectClusterResourceIndex = "backup-cache-cluster-resource-index"
-)
-
-var (
-	defaultExcludedNamespaces = []string{"kube-system", "kube-public", "kube-node-lease"}
-)
+var excludeResourceType = [...]string{
+	NodeKind,
+	EventKind,
+}
 
 type Context interface {
-	Complete() (*kahuapi.Backup, error)
+	Complete() error
 	IsComplete() bool
 	GetNamespaces() []string
+	GetKindResources(kind string) []*unstructured.Unstructured
 	GetResources() []*unstructured.Unstructured
-	GetPVCResources() ([]*unstructured.Unstructured, error)
+	GetClusterScopeResources() []*unstructured.Unstructured
+	SyncResources(*kahuapi.Backup) (*kahuapi.Backup, error)
 }
 
 type backupContext struct {
@@ -117,7 +113,7 @@ func newBackupObjectIndexers(logger log.FieldLogger) cache.Indexers {
 
 			return keys, nil
 		},
-		backupCachePVCIndex: func(obj interface{}) ([]string, error) {
+		backupCacheResourceIndex: func(obj interface{}) ([]string, error) {
 			keys := make([]string, 0)
 			var resource *unstructured.Unstructured
 			switch t := obj.(type) {
@@ -129,31 +125,7 @@ func newBackupObjectIndexers(logger log.FieldLogger) cache.Indexers {
 				return keys, nil
 			}
 
-			if resource.GetKind() == "PersistentVolumeClaim" {
-				keys = append(keys, fmt.Sprintf("%s/%s",
-					resource.GetNamespace(),
-					resource.GetName()))
-			}
-
-			return keys, nil
-		},
-		backupCachePVIndex: func(obj interface{}) ([]string, error) {
-			keys := make([]string, 0)
-			var resource *unstructured.Unstructured
-			switch t := obj.(type) {
-			case *unstructured.Unstructured:
-				resource = t
-			case unstructured.Unstructured:
-				resource = t.DeepCopy()
-			default:
-				return keys, nil
-			}
-
-			if resource.GetKind() == "PersistentVolume" {
-				keys = append(keys, resource.GetName())
-			}
-
-			return keys, nil
+			return append(keys, resource.GetKind()), nil
 		},
 		backupCacheObjectClusterResourceIndex: func(obj interface{}) ([]string, error) {
 			keys := make([]string, 0)
@@ -176,44 +148,30 @@ func newBackupObjectIndexers(logger log.FieldLogger) cache.Indexers {
 	}
 }
 
-func (ctx *backupContext) Complete() (*kahuapi.Backup, error) {
+func (ctx *backupContext) Complete() error {
 	if ctx.isBackupCacheComplete {
-		return ctx.backup, nil
+		return nil
 	}
 
 	// if phase has not completed validation, ignore populating backup objects
 	if ctx.backup.Status.Phase == kahuapi.BackupPhaseInit {
-		return ctx.backup, errors.New("backup has not finished validation")
+		return errors.New("backup has not finished validation")
 	}
 
 	// populate all backup resources in cache
-	var err error
-	//if len(ctx.backup.Status.Resources) > 0 {
-	//	err = ctx.populateCacheFromBackupStatus()
-	//} else {
-	//	err = ctx.populateCacheFromBackupSpec()
-	//	if err != nil {
-	//		return ctx.backup, err
-	//	}
-	//	// update backup status with backup resources
-	//	err = ctx.updateBackupStatus()
-	//}
-
-	err = ctx.populateCacheFromBackupSpec()
+	err := ctx.populateCacheFromBackupSpec()
 	if err != nil {
-		return ctx.backup, err
+		return err
 	}
 
 	if err == nil {
 		ctx.isBackupCacheComplete = true
 	}
 
-	err = ctx.updateBackupStatus()
-
-	return ctx.backup, err
+	return err
 }
 
-func (ctx *backupContext) updateBackupStatus() error {
+func (ctx *backupContext) SyncResources(backup *kahuapi.Backup) (*kahuapi.Backup, error) {
 	resources := ctx.GetResources()
 	backupResources := make([]kahuapi.BackupResource, 0)
 
@@ -232,11 +190,36 @@ func (ctx *backupContext) updateBackupStatus() error {
 		Resources: backupResources,
 	})
 	if err != nil {
-		return err
+		return backup, err
 	}
 	ctx.backup = backup
 
-	return nil
+	return backup, nil
+}
+
+func (ctx *backupContext) GetClusterScopeResources() []*unstructured.Unstructured {
+	resources := make([]*unstructured.Unstructured, 0)
+	indexNames := ctx.backupIndexCache.ListIndexFuncValues(backupCacheObjectClusterResourceIndex)
+	for _, indexName := range indexNames {
+		indexResources, err := ctx.backupIndexCache.ByIndex(backupCacheObjectClusterResourceIndex, indexName)
+		if err != nil {
+			ctx.logger.Errorf("Unable to get cluster scope resources")
+			break
+		}
+		for _, indexResource := range indexResources {
+			switch resource := indexResource.(type) {
+			case unstructured.Unstructured:
+				resources = append(resources, resource.DeepCopy())
+			case *unstructured.Unstructured:
+				resources = append(resources, resource)
+			default:
+				ctx.logger.Warningf("invalid resource format "+
+					"in backup cache. %s", reflect.TypeOf(resource))
+			}
+		}
+	}
+
+	return resources
 }
 
 func (ctx *backupContext) IsComplete() bool {
@@ -265,35 +248,27 @@ func (ctx *backupContext) GetResources() []*unstructured.Unstructured {
 	return resources
 }
 
-func (ctx *backupContext) GetPVCResources() ([]*unstructured.Unstructured, error) {
+func (ctx *backupContext) GetKindResources(kind string) []*unstructured.Unstructured {
 	resources := make([]*unstructured.Unstructured, 0)
-	indexNames := ctx.backupIndexCache.ListIndexFuncValues(backupCachePVCIndex)
-	for _, indexName := range indexNames {
-		indexResources, err := ctx.backupIndexCache.ByIndex(backupCachePVCIndex, indexName)
-		if err != nil {
-			return nil, err
-		}
-		for _, indexResource := range indexResources {
-			switch resource := indexResource.(type) {
-			case unstructured.Unstructured:
-				resources = append(resources, resource.DeepCopy())
-			case *unstructured.Unstructured:
-				resources = append(resources, resource)
-			default:
-				ctx.logger.Warningf("invalid resource format "+
-					"in backup cache. %s", reflect.TypeOf(resource))
-			}
+
+	indexResources, err := ctx.backupIndexCache.ByIndex(backupCacheResourceIndex, kind)
+	if err != nil {
+		ctx.logger.Errorf("Unable to get cluster scope resources")
+		return resources
+	}
+	for _, indexResource := range indexResources {
+		switch resource := indexResource.(type) {
+		case unstructured.Unstructured:
+			resources = append(resources, resource.DeepCopy())
+		case *unstructured.Unstructured:
+			resources = append(resources, resource)
+		default:
+			ctx.logger.Warningf("invalid resource format "+
+				"in backup cache. %s", reflect.TypeOf(resource))
 		}
 	}
 
-	return resources, nil
-}
-
-func (ctx *backupContext) populateCacheFromBackupStatus() error {
-	//for _, backupResource := range ctx.backup.Status.Resources {
-	//
-	//}
-	return nil
+	return resources
 }
 
 func (ctx *backupContext) populateCacheFromBackupSpec() error {
@@ -308,7 +283,7 @@ func (ctx *backupContext) populateCacheFromBackupSpec() error {
 	ctx.logger.Infof("Selected namespaces for backup %s", strings.Join(namespaces, ", "))
 
 	// retrieve kubernetes cluster API resources
-	apiResources, err := ctx.discoveryHelper.GetNamespaceScopedResources()
+	apiResources, err := ctx.discoveryHelper.GetNamespaceScopedAPIResources()
 	if err != nil {
 		return errors.Wrap(err, "unable to get namespace scoped resources")
 	}
@@ -316,6 +291,7 @@ func (ctx *backupContext) populateCacheFromBackupSpec() error {
 	apiResources = ctx.getFilteredNamespacedResources(apiResources)
 
 	for _, namespace := range namespaces {
+		ctx.logger.Infof("Collecting resources for namespace %s", namespace)
 		resources, err := ctx.collectNamespaceResources(namespace, apiResources)
 		if err != nil {
 			ctx.logger.Errorf("unable to retrieve resource for namespace %s", namespace)
@@ -323,7 +299,9 @@ func (ctx *backupContext) populateCacheFromBackupSpec() error {
 				fmt.Sprintf("unable to retrieve resource for namespace %s", namespace))
 		}
 
+		ctx.logger.Infof("Collected resources for namespace %s", namespace)
 		for _, resource := range resources {
+			ctx.logger.Infof("Resource %s", unstructuredResourceKeyFunc(resource))
 			err := ctx.backupIndexCache.Add(resource.DeepCopy())
 			if err != nil {
 				return errors.Wrap(err, fmt.Sprintf("unable to populate backup "+
@@ -348,8 +326,7 @@ func (ctx *backupContext) collectNamespacesWithBackupSpec() error {
 
 	namespaceList := make(map[string]v1.Namespace, 0)
 	includeList := sets.NewString(ctx.backup.Spec.IncludeNamespaces...)
-	excludeList := sets.NewString(ctx.backup.Spec.ExcludeNamespaces...).
-		Insert(defaultExcludedNamespaces...)
+	excludeList := sets.NewString(ctx.backup.Spec.ExcludeNamespaces...)
 
 	for _, namespace := range namespaces.Items {
 		if excludeList.Has(namespace.Name) {

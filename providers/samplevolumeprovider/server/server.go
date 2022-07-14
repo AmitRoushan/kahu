@@ -44,30 +44,30 @@ func NewVolumeBackupService(ctx context.Context) *service {
 // StartBackup create backup of the provided volumes
 func (svc *service) StartBackup(ctx context.Context, req *pb.StartBackupRequest) (*pb.StartBackupResponse, error) {
 	log.Infof("Start Backup called with Request %+v", req)
-	return nil, nil
+	return &pb.StartBackupResponse{}, nil
 }
 
 // DeleteBackup delete given backup
 func (svc *service) DeleteBackup(ctx context.Context, req *pb.DeleteBackupRequest) (*pb.DeleteBackupResponse, error) {
 	log.Infof("Delete Backup called with Request %+v", req)
-	return nil, nil
+	return &pb.DeleteBackupResponse{}, nil
 }
 
 // CancelBackup cancel given backup
 func (svc *service) CancelBackup(context.Context, *pb.CancelBackupRequest) (*pb.CancelBackupResponse, error) {
-	return nil, nil
+	return &pb.CancelBackupResponse{}, nil
 }
 
 // GetBackupStat get backup statistics
 func (svc *service) GetBackupStat(_ context.Context, req *pb.GetBackupStatRequest) (*pb.GetBackupStatResponse, error) {
 	log.Infof("GetBackupStat called with Request %+v", req)
-	return nil, nil
+	return &pb.GetBackupStatResponse{}, nil
 }
 
 // Create volume from backup (for restore)
 func (svc *service) CreateVolumeFromBackup(context.Context,
 	*pb.CreateVolumeFromBackupRequest) (*pb.CreateVolumeFromBackupResponse, error) {
-	return nil, nil
+	return &pb.CreateVolumeFromBackupResponse{}, nil
 }
 
 // Cancel given restore

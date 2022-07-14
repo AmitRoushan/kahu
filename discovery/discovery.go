@@ -55,9 +55,9 @@ type DiscoveryHelper interface {
 	// Refresh updates API resource list with discovery helper
 	Refresh() error
 
-	GetNamespaceScopedResources() ([]*metav1.APIResource, error)
+	GetNamespaceScopedAPIResources() ([]*metav1.APIResource, error)
 
-	GetClusterScopedResources() ([]*metav1.APIResource, error)
+	GetClusterScopedAPIResources() ([]*metav1.APIResource, error)
 }
 
 type discoverHelper struct {
@@ -248,7 +248,7 @@ func (helper *discoverHelper) Resources() []*metav1.APIResourceList {
 	return helper.resources
 }
 
-func (helper *discoverHelper) GetNamespaceScopedResources() ([]*metav1.APIResource, error) {
+func (helper *discoverHelper) GetNamespaceScopedAPIResources() ([]*metav1.APIResource, error) {
 	helper.lock.RLock()
 	defer helper.lock.RUnlock()
 	gvks := helper.apiIndexedResources.ListIndexFuncValues(namespaceScopeIndex)
@@ -273,7 +273,7 @@ func (helper *discoverHelper) GetNamespaceScopedResources() ([]*metav1.APIResour
 	return apiResources, nil
 }
 
-func (helper *discoverHelper) GetClusterScopedResources() ([]*metav1.APIResource, error) {
+func (helper *discoverHelper) GetClusterScopedAPIResources() ([]*metav1.APIResource, error) {
 	helper.lock.RLock()
 	defer helper.lock.RUnlock()
 

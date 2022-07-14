@@ -29,23 +29,16 @@ import (
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 )
 
-const (
-	volumeContentBackupLabel = "kahu.io/backup-name"
-)
-
 func getVBCName(backupName string) string {
 	return fmt.Sprintf("%s-%s", backupName, uuid.New().String())
 }
 
 func (ctrl *controller) processVolumeBackup(backup *kahuapi.Backup, ctx Context) error {
+	// check backup state
 	// process backup for metadata and volume backup
 	ctrl.logger.Infof("Processing Volume backup(%s)", backup.Name)
 
-	uPVCResources, err := ctx.GetPVCResources()
-	if err != nil {
-		return errors.Wrap(err, "unable to get pvc resources")
-	}
-
+	uPVCResources := ctx.GetKindResources(PVCKind)
 	pvProviderMap := make(map[string][]v1.PersistentVolume, 0)
 	for _, uPVCResource := range uPVCResources {
 		var pvc v1.PersistentVolumeClaim
@@ -56,7 +49,8 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.Backup, ctx Context)
 			continue
 		}
 
-		if len(pvc.Spec.VolumeName) == 0 {
+		if len(pvc.Spec.VolumeName) == 0 ||
+			pvc.DeletionTimestamp != nil {
 			// ignore unbound PV
 			continue
 		}
