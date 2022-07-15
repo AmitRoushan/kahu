@@ -83,3 +83,8 @@ func (ctrl *controller) processMetadataBackup(backup *kahuapi.Backup, ctx Contex
 	}
 	return nil
 }
+
+func (ctrl *controller) deleteMetadataBackup(backup *kahuapi.Backup) error {
+
+	return nil
+}

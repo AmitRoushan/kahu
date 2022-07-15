@@ -34,6 +34,10 @@ type VolumeBackupContentSpec struct {
 
 	// Volume provider for set of volumes
 	VolumeProvider *string `json:"volumeProvider,omitempty"`
+
+	// Backup provider customize information
+	// +required
+	BackupProviderLocation string `json:"backupProviderLocation"`
 }
 
 // +kubebuilder:validation:Enum=New;InProgress;Completed;Failed;Deleting
@@ -64,7 +68,6 @@ type VolumeBackupContentStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// +optional
-	// +kubebuilder:default=New
 	Phase VolumeBackupContentPhase `json:"phase,omitempty"`
 
 	// +optional
@@ -84,7 +87,7 @@ type VolumeBackupContentStatus struct {
 
 // +genclient
 // +genclient:nonNamespaced
-// +genclient:skipVerbs=update,patch
+// +genclient:skipVerbs=update
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster

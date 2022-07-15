@@ -25,6 +25,7 @@ import (
 	v1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	scheme "github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	rest "k8s.io/client-go/rest"
 )
@@ -44,6 +45,7 @@ type VolumeBackupContentInterface interface {
 	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.VolumeBackupContent, error)
 	List(ctx context.Context, opts v1.ListOptions) (*v1beta1.VolumeBackupContentList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.VolumeBackupContent, err error)
 	VolumeBackupContentExpansion
 }
 
@@ -151,4 +153,18 @@ func (c *volumeBackupContents) DeleteCollection(ctx context.Context, opts v1.Del
 		Body(&opts).
 		Do(ctx).
 		Error()
+}
+
+// Patch applies the patch and returns the patched volumeBackupContent.
+func (c *volumeBackupContents) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.VolumeBackupContent, err error) {
+	result = &v1beta1.VolumeBackupContent{}
+	err = c.client.Patch(pt).
+		Resource("volumebackupcontents").
+		Name(name).
+		SubResource(subresources...).
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(data).
+		Do(ctx).
+		Into(result)
+	return
 }

@@ -74,7 +74,6 @@ func (rc *reconciler) reconciliationLoopFunc() func() {
 
 func (rc *reconciler) reconcile() {
 	// check and update volume backup state
-
 	volumeBackupList, err := rc.volumeBackupLister.List(labels.Everything())
 	if err != nil {
 		rc.logger.Errorf("Unable to get volume backup list. %s", err)

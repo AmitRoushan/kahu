@@ -18,11 +18,16 @@ package backup
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	jsonpatch "github.com/evanphx/json-patch"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"github.com/soda-cdm/kahu/utils"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -40,6 +45,8 @@ import (
 
 const (
 	controllerName = "volume-content-backup"
+
+	volumeBackupFinalizer = "kahu.io/volume-backup-protection"
 )
 
 type controller struct {
@@ -117,12 +124,21 @@ func (ctrl *controller) processQueue(key string) error {
 
 	volumeBackup, err := ctrl.volumeBackupLister.Get(name)
 	if err == nil {
+		volumeBackupClone := volumeBackup.DeepCopy()
 		// delete scenario
-		if volumeBackup.DeletionTimestamp != nil {
-			return ctrl.processDeleteVolumeBackup(volumeBackup)
+		if volumeBackupClone.DeletionTimestamp != nil {
+			return ctrl.processDeleteVolumeBackup(volumeBackupClone)
+		}
+
+		if isInitNeeded(volumeBackupClone) {
+			volumeBackupClone, err = ctrl.backupInitialize(volumeBackupClone)
+			if err != nil {
+				ctrl.logger.Errorf("failed to initialize finalizer backup(%s)", volumeBackupClone.Name)
+				return err
+			}
 		}
 		// process create and sync
-		return ctrl.processVolumeBackup(volumeBackup)
+		return ctrl.processVolumeBackup(volumeBackupClone)
 	}
 	if !apierrors.IsNotFound(err) {
 		// re enqueue for processing
@@ -136,6 +152,33 @@ func (ctrl *controller) processQueue(key string) error {
 
 func (ctrl *controller) processDeleteVolumeBackup(backup *kahuapi.VolumeBackupContent) error {
 	ctrl.logger.Infof("Processing volume backup delete request for %v", backup)
+
+	backupIdentifiers := make([]*pb.BackupIdentifier, 0)
+	for _, volumeState := range backup.Status.BackupState {
+		backupIdentifier := new(pb.BackupIdentifier)
+		backupIdentifier.BackupHandle = volumeState.BackupHandle
+		backupIdentifier.PvName = volumeState.VolumeName
+	}
+
+	_, err := ctrl.providerClient.DeleteBackup(context.Background(), &pb.DeleteBackupRequest{
+		BackupContentName: backup.Name,
+		BackupInfo:        backupIdentifiers,
+	})
+	if err != nil {
+		ctrl.logger.Errorf("Unable to delete backup. %s", err)
+		return err
+	}
+
+	if utils.ContainsFinalizer(backup, volumeBackupFinalizer) {
+		backupClone := backup.DeepCopy()
+		utils.RemoveFinalizer(backupClone, volumeBackupFinalizer)
+		_, err := ctrl.updateBackup(backup, backupClone)
+		if err != nil {
+			ctrl.logger.Errorf("removing finalizer failed for %s", backup.Name)
+		}
+		return err
+	}
+
 	return nil
 }
 
@@ -198,31 +241,80 @@ func (ctrl *controller) deleteVolumeBackup(backup *kahuapi.VolumeBackupContent) 
 func (ctrl *controller) updateStatus(backup *kahuapi.VolumeBackupContent,
 	status kahuapi.VolumeBackupContentStatus) (*kahuapi.VolumeBackupContent, error) {
 	ctrl.logger.Infof("Updating status: volume backup content %s", backup.Name)
-	currentCopy, err := ctrl.volumeBackupLister.Get(backup.Name)
-	if err != nil {
-		ctrl.logger.Errorf("Unable to update status. %s", err)
-		return nil, err
-	}
-
-	if currentCopy.Status.Phase != "" &&
-		status.Phase != currentCopy.Status.Phase {
-		currentCopy.Status.Phase = status.Phase
+	if backup.Status.Phase != "" &&
+		status.Phase != backup.Status.Phase {
+		backup.Status.Phase = status.Phase
 	}
 
 	if status.FailureReason != "" {
-		currentCopy.Status.FailureReason = status.FailureReason
+		backup.Status.FailureReason = status.FailureReason
 	}
 
-	if currentCopy.Status.StartTimestamp == nil &&
+	if backup.Status.StartTimestamp == nil &&
 		status.StartTimestamp != nil {
-		currentCopy.Status.StartTimestamp = status.StartTimestamp
+		backup.Status.StartTimestamp = status.StartTimestamp
 	}
 
 	if status.BackupState != nil {
-		currentCopy.Status.BackupState = status.BackupState
+		backup.Status.BackupState = status.BackupState
 	}
 
 	return ctrl.volumeBackupClient.UpdateStatus(context.TODO(),
-		currentCopy,
+		backup,
 		metav1.UpdateOptions{})
+}
+
+func isInitNeeded(backup *kahuapi.VolumeBackupContent) bool {
+	if !utils.ContainsFinalizer(backup, volumeBackupFinalizer) ||
+		backup.Status.Phase == "" {
+		return true
+	}
+
+	return false
+}
+
+func (ctrl *controller) backupInitialize(
+	backup *kahuapi.VolumeBackupContent) (*kahuapi.VolumeBackupContent, error) {
+	backupClone := backup.DeepCopy()
+	if !utils.ContainsFinalizer(backup, volumeBackupFinalizer) {
+		utils.SetFinalizer(backupClone, volumeBackupFinalizer)
+	}
+	if backupClone.Status.Phase == "" {
+		backupClone.Status.Phase = kahuapi.VolumeBackupContentPhaseInit
+	}
+	if backup.Status.StartTimestamp == nil {
+		time := metav1.Now()
+		backupClone.Status.StartTimestamp = &time
+	}
+	return ctrl.updateBackup(backup, backupClone)
+}
+
+func (ctrl *controller) updateBackup(
+	oldBackup,
+	newBackup *kahuapi.VolumeBackupContent) (*kahuapi.VolumeBackupContent, error) {
+	origBytes, err := json.Marshal(oldBackup)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshalling original backup")
+	}
+
+	updatedBytes, err := json.Marshal(newBackup)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshalling updated backup")
+	}
+
+	patchBytes, err := jsonpatch.CreateMergePatch(origBytes, updatedBytes)
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating json merge patch for backup")
+	}
+
+	updatedBackup, err := ctrl.volumeBackupClient.Patch(context.TODO(),
+		oldBackup.Name,
+		types.MergePatchType,
+		patchBytes,
+		metav1.PatchOptions{}, "status")
+	if err != nil {
+		return nil, errors.Wrap(err, "error patching backup")
+	}
+
+	return updatedBackup, nil
 }

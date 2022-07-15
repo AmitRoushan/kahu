@@ -39,6 +39,9 @@ spec:
               backupName:
                 description: BackupName is backup CR name specified during backup
                 type: string
+              backupProviderLocation:
+                description: Backup provider customize information
+                type: string
               volumeProvider:
                 description: Volume provider for set of volumes
                 type: string
@@ -62,6 +65,23 @@ spec:
                       type: string
                     metadata:
                       description: 'Standard object''s metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata'
+                      properties:
+                        annotations:
+                          additionalProperties:
+                            type: string
+                          type: object
+                        finalizers:
+                          items:
+                            type: string
+                          type: array
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
+                        name:
+                          type: string
+                        namespace:
+                          type: string
                       type: object
                     spec:
                       description: 'spec defines a specification of a persistent volume
@@ -1147,6 +1167,7 @@ spec:
                 type: array
             required:
             - backupName
+            - backupProviderLocation
             type: object
           status:
             description: VolumeBackupContentStatus defines the observed state of VolumeBackupContent
@@ -1173,7 +1194,6 @@ spec:
               failureReason:
                 type: string
               phase:
-                default: New
                 enum:
                 - New
                 - InProgress

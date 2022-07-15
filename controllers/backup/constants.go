@@ -32,8 +32,10 @@ const (
 	//backupCachePVIndex                    = "backup-cache-pv-index"
 	backupCacheObjectClusterResourceIndex = "backup-cache-cluster-resource-index"
 
-	annVolumeBackupCompleted = "kahu.io/volume-backup-completed"
-	volumeContentBackupLabel = "kahu.io/backup-name"
+	volumeContentBackupLabel       = "kahu.io/backup-name"
+	volumeContentVolumeProvider    = "kahu.io/backup-provider"
+	annVolumeBackupDeleteCompleted = "kahu.io/volume-backup-delete-completed"
+	annVolumeBackupCompleted       = "kahu.io/volume-backup-completed"
 )
 
 type Phase int

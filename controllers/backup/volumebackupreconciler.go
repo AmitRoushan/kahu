@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"time"
@@ -83,6 +84,19 @@ func (rc *reconciler) reconcile() {
 
 	for _, backup := range backups {
 		backupName := backup.Name
+
+		if backup.DeletionTimestamp != nil {
+			deleted, err := rc.isVolumeBackupContentDeleted(backup)
+			if err != nil {
+				rc.logger.Errorf("Failed to check deleted volume backup status. %s", err)
+				return
+			}
+
+			if deleted {
+				rc.annotateBackup(annVolumeBackupDeleteCompleted, backupName)
+			}
+		}
+
 		if !rc.isReconcileRequired(backup) {
 			rc.logger.Debugf("Skipping reconcile for backup %s", backupName)
 			return
@@ -99,7 +113,7 @@ func (rc *reconciler) reconcile() {
 		}
 
 		// may be lister not populated with volume backup contents
-		if rc.isBackupStatusHasVolume(backup) && len(vbContents) == 0 {
+		if len(vbContents) == 0 {
 			continue
 		}
 
@@ -115,55 +129,62 @@ func (rc *reconciler) reconcile() {
 			continue
 		}
 
-		err = rc.annotateVolumeCompleteness(backupName)
+		err = rc.annotateBackup(annVolumeBackupCompleted, backupName)
 		if err != nil {
 			rc.logger.Errorf("Unable to annotate backup(%s) with volume backup completeness", backupName)
 		}
 	}
 }
 
-func (rc *reconciler) isBackupStatusHasVolume(backup *kahuapi.Backup) bool {
-	for _, resource := range backup.Status.Resources {
-		if resource.Kind == PVCKind ||
-			resource.Kind == PVKind {
-			return true
-		}
+func (rc *reconciler) isVolumeBackupContentDeleted(backup *kahuapi.Backup) (bool, error) {
+	backupName := backup.Name
+	// annotate with volume backup deletion if no volume for backup
+	vbContents, err := rc.volumeBackupLister.List(labels.Set{
+		volumeContentBackupLabel: backupName,
+	}.AsSelector())
+	if err == nil && len(vbContents) > 0 {
+		rc.logger.Debug("VolumeBackupContents still available in backup %s", backupName)
+		return false, nil
 	}
 
-	return false
+	if apierrors.IsNotFound(err) || len(vbContents) == 0 {
+		return true, nil
+	}
+
+	return false, err
 }
 
 func (rc *reconciler) isReconcileRequired(backup *kahuapi.Backup) bool {
 	// skip reconcile if backup getting deleted
 	// skip reconcile if backup.Status.Phase is not volume backup
 	// skip reconcile if volume backup completed
-	if backup.DeletionTimestamp != nil ||
-		backup.Status.Phase != kahuapi.BackupPhaseVolume ||
+	if backup.Status.Phase != kahuapi.BackupPhaseVolume ||
 		metav1.HasAnnotation(backup.ObjectMeta, annVolumeBackupCompleted) {
 		return false
 	}
 	return true
 }
 
-func (rc *reconciler) annotateVolumeCompleteness(
+func (rc *reconciler) annotateBackup(
+	annotation string,
 	backupName string) error {
-	rc.logger.Infof("Annotating backup(%s) with volume backup completeness", backupName)
+	rc.logger.Infof("Annotating backup(%s) with %s", backupName, annotation)
 
 	backup, err := rc.backupLister.Get(backupName)
 	if err != nil {
-		rc.logger.Errorf("Unable to update backup(%s) for volume completeness. %s",
-			backupName, err)
+		rc.logger.Errorf("Unable to get backup(%s) for %s. %s",
+			backupName, annotation, err)
 		return errors.Wrap(err, "Unable to update backup")
 	}
 
-	_, ok := backup.Annotations[annVolumeBackupCompleted]
+	_, ok := backup.Annotations[annotation]
 	if ok {
-		rc.logger.Infof("Backup(%s) allready annotated for volume backup completeness", backupName)
+		rc.logger.Infof("Backup(%s) all-ready annotated with %s", annotation)
 		return nil
 	}
 
 	backupClone := backup.DeepCopy()
-	backupClone.Annotations[annVolumeBackupCompleted] = "true"
+	backupClone.Annotations[annotation] = "true"
 
 	origBytes, err := json.Marshal(backup)
 	if err != nil {

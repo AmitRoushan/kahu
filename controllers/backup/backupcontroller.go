@@ -145,8 +145,8 @@ func (ctrl *controller) processQueue(key string) error {
 		backupClone, err = ctrl.backupInitialize(backupClone)
 		if err != nil {
 			ctrl.logger.Errorf("failed to initialize finalizer backup(%s)", backupClone.Name)
+			return err
 		}
-		return err
 	}
 
 	if backupClone.DeletionTimestamp != nil {
@@ -155,6 +155,38 @@ func (ctrl *controller) processQueue(key string) error {
 
 	// TODO (Amit Roushan): Add check for already processed backup
 	return ctrl.syncBackup(backupClone)
+}
+
+func (ctrl *controller) deleteBackup(backup *kahuapi.Backup) error {
+	ctrl.logger.Infof("Initiating backup(%s) delete", backup.Name)
+
+	err := ctrl.removeVolumeBackup(backup)
+	if err != nil {
+		ctrl.logger.Errorf("Unable to delete volume backup. %s", err)
+		return err
+	}
+
+	if !utils.ContainsFinalizer(backup, annVolumeBackupDeleteCompleted) {
+		ctrl.logger.Info("Continue to delete volume backup")
+		return nil
+	}
+
+	err = ctrl.deleteMetadataBackup(backup)
+	if err != nil {
+		ctrl.logger.Errorf("Unable to delete meta backup. %s", err)
+		return err
+	}
+
+	if utils.ContainsFinalizer(backup, backupFinalizer) {
+		backupClone := backup.DeepCopy()
+		utils.RemoveFinalizer(backupClone, backupFinalizer)
+		_, err := ctrl.updateBackup(backup, backupClone)
+		if err != nil {
+			ctrl.logger.Errorf("removing finalizer failed for %s", backup.Name)
+		}
+		return err
+	}
+	return nil
 }
 
 func (ctrl *controller) syncBackup(backup *kahuapi.Backup) error {
@@ -272,21 +304,6 @@ func (ctrl *controller) processBackup(backup *kahuapi.Backup) error {
 	return nil
 }
 
-func (ctrl *controller) deleteBackup(backup *kahuapi.Backup) error {
-	ctrl.logger.Infof("Initiating backup(%s) delete", backup.Name)
-
-	if utils.ContainsFinalizer(backup, backupFinalizer) {
-		backupClone := backup.DeepCopy()
-		utils.RemoveFinalizer(backupClone, backupFinalizer)
-		_, err := ctrl.updateBackup(backup, backupClone)
-		if err != nil {
-			ctrl.logger.Errorf("removing finalizer failed for %s", backup.Name)
-		}
-		return err
-	}
-	return nil
-}
-
 func (ctrl *controller) validateBackup(backup *kahuapi.Backup) error {
 	var validationErrors []string
 	// namespace validation
@@ -341,30 +358,17 @@ func isBackupInitNeeded(backup *kahuapi.Backup) bool {
 
 func (ctrl *controller) backupInitialize(backup *kahuapi.Backup) (*kahuapi.Backup, error) {
 	backupClone := backup.DeepCopy()
-	var err error
-
 	if !utils.ContainsFinalizer(backup, backupFinalizer) {
 		utils.SetFinalizer(backupClone, backupFinalizer)
-		backup, err = ctrl.updateBackup(backup, backupClone)
-		if err != nil {
-			return backupClone, err
-		}
 	}
-
-	backupStatus := kahuapi.BackupStatus{}
-	if backup.Status.Phase == "" {
-		backupStatus.Phase = kahuapi.BackupPhaseInit
-		if backup.Status.StartTimestamp == nil {
-			time := metav1.Now()
-			backupStatus.StartTimestamp = &time
-		}
-		backup, err = ctrl.updateBackupStatus(backup, backupStatus)
-		if err != nil {
-			return backup, err
-		}
+	if backupClone.Status.Phase == "" {
+		backupClone.Status.Phase = kahuapi.BackupPhaseInit
 	}
-
-	return backup, nil
+	if backup.Status.StartTimestamp == nil {
+		time := metav1.Now()
+		backupClone.Status.StartTimestamp = &time
+	}
+	return ctrl.updateBackup(backup, backupClone)
 }
 
 func (ctrl *controller) updateBackup(oldBackup, newBackup *kahuapi.Backup) (*kahuapi.Backup, error) {
