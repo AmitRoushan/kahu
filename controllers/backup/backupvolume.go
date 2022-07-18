@@ -61,7 +61,7 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.Backup, ctx Context)
 func (ctrl *controller) removeVolumeBackup(
 	backup *kahuapi.Backup) error {
 
-	vbcList, err := ctrl.volumeContentClient.List(context.TODO(), metav1.ListOptions{
+	vbcList, err := ctrl.volumeBackupClient.List(context.TODO(), metav1.ListOptions{
 		LabelSelector: labels.Set{
 			volumeContentBackupLabel: backup.Name,
 		}.String(),
@@ -72,7 +72,7 @@ func (ctrl *controller) removeVolumeBackup(
 	}
 
 	for _, vbc := range vbcList.Items {
-		err := ctrl.volumeContentClient.Delete(context.TODO(), vbc.Name, metav1.DeleteOptions{})
+		err := ctrl.volumeBackupClient.Delete(context.TODO(), vbc.Name, metav1.DeleteOptions{})
 		if err != nil {
 			ctrl.logger.Errorf("Failed to delete volume backup content %s", err)
 			return errors.Wrap(err, "Unable to delete volume backup content")
@@ -149,7 +149,7 @@ func (ctrl *controller) ensureVolumeBackupContent(
 	for provider, pvList := range pvProviderMap {
 		// check if volume content already available
 		// backup name and provider name is unique tuple for volume backup content
-		vbcList, err := ctrl.volumeContentClient.List(context.TODO(), metav1.ListOptions{
+		vbcList, err := ctrl.volumeBackupClient.List(context.TODO(), metav1.ListOptions{
 			LabelSelector: labels.Set{
 				volumeContentBackupLabel:    backupName,
 				volumeContentVolumeProvider: provider,
@@ -182,7 +182,7 @@ func (ctrl *controller) ensureVolumeBackupContent(
 			},
 		}
 
-		_, err = ctrl.volumeContentClient.Create(context.TODO(), volumeBackupContent, metav1.CreateOptions{})
+		_, err = ctrl.volumeBackupClient.Create(context.TODO(), volumeBackupContent, metav1.CreateOptions{})
 		if err != nil {
 			ctrl.logger.Errorf("unable to create volume backup content "+
 				"for provider %s", provider)

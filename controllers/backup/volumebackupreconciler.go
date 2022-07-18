@@ -84,22 +84,27 @@ func (rc *reconciler) reconcile() {
 
 	for _, backup := range backups {
 		backupName := backup.Name
-
 		if backup.DeletionTimestamp != nil {
 			deleted, err := rc.isVolumeBackupContentDeleted(backup)
 			if err != nil {
 				rc.logger.Errorf("Failed to check deleted volume backup status. %s", err)
-				return
+				continue
 			}
 
 			if deleted {
-				rc.annotateBackup(annVolumeBackupDeleteCompleted, backupName)
+				err := rc.annotateBackup(annVolumeBackupDeleteCompleted, backupName)
+				if err != nil {
+					rc.logger.Errorf("Unable to add annotation(%s) for backup(%s)",
+						annVolumeBackupDeleteCompleted,
+						backupName)
+				}
+				continue
 			}
 		}
 
 		if !rc.isReconcileRequired(backup) {
 			rc.logger.Debugf("Skipping reconcile for backup %s", backupName)
-			return
+			continue
 		}
 
 		// annotate with volume completeness if no volume for backup
@@ -118,10 +123,23 @@ func (rc *reconciler) reconcile() {
 		}
 
 		volumesBackupDone := true
-		for _, vbs := range vbContents {
-			if vbs.Status.Phase != kahuapi.VolumeBackupContentPhaseCompleted {
+		volumeBackupFailed := false
+		for _, vbc := range vbContents {
+			if vbc.Status.Phase == kahuapi.VolumeBackupContentPhaseFailed {
+				volumeBackupFailed = true
+				break
+			}
+			if vbc.Status.Phase != kahuapi.VolumeBackupContentPhaseCompleted {
 				volumesBackupDone = false
 				break
+			}
+		}
+
+		if volumeBackupFailed {
+			// update backup status failure
+			_, err = rc.updateBackupFailure(backup)
+			if err == nil {
+				rc.logger.Errorf("Unable to update backup(%s) failure", backup.Name)
 			}
 		}
 
@@ -147,7 +165,8 @@ func (rc *reconciler) isVolumeBackupContentDeleted(backup *kahuapi.Backup) (bool
 		return false, nil
 	}
 
-	if apierrors.IsNotFound(err) || len(vbContents) == 0 {
+	if apierrors.IsNotFound(err) ||
+		len(vbContents) == 0 {
 		return true, nil
 	}
 
@@ -155,7 +174,6 @@ func (rc *reconciler) isVolumeBackupContentDeleted(backup *kahuapi.Backup) (bool
 }
 
 func (rc *reconciler) isReconcileRequired(backup *kahuapi.Backup) bool {
-	// skip reconcile if backup getting deleted
 	// skip reconcile if backup.Status.Phase is not volume backup
 	// skip reconcile if volume backup completed
 	if backup.Status.Phase != kahuapi.BackupPhaseVolume ||
@@ -184,7 +202,7 @@ func (rc *reconciler) annotateBackup(
 	}
 
 	backupClone := backup.DeepCopy()
-	backupClone.Annotations[annotation] = "true"
+	metav1.SetMetaDataAnnotation(&backupClone.ObjectMeta, annotation, "true")
 
 	origBytes, err := json.Marshal(backup)
 	if err != nil {
@@ -210,4 +228,18 @@ func (rc *reconciler) annotateBackup(
 	}
 
 	return nil
+}
+
+func (rc *reconciler) updateBackupFailure(
+	backup *kahuapi.Backup) (*kahuapi.Backup, error) {
+	var err error
+
+	backupClone := backup.DeepCopy()
+	backupClone.Status.State = kahuapi.BackupStateFailed
+	backupClone, err = rc.backupClient.UpdateStatus(context.TODO(), backupClone, metav1.UpdateOptions{})
+	if err != nil {
+		rc.logger.Errorf("updating backup(%s) status: update status failed %s", backup.Name, err)
+	}
+
+	return backupClone, err
 }

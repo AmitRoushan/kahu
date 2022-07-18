@@ -81,11 +81,11 @@ func (rc *reconciler) reconcile() {
 	}
 	for _, volumeBackup := range volumeBackupList {
 		if volumeBackup.DeletionTimestamp != nil {
-			rc.logger.Errorf("Volume backup % is getting deleted. Skipping reconciliation",
+			rc.logger.Debugf("Volume backup % is getting deleted. Skipping reconciliation",
 				volumeBackup.Name)
 			continue
 		} else if volumeBackup.Status.Phase == kahuapi.VolumeBackupContentPhaseCompleted {
-			rc.logger.Errorf("Volume backup % is completed. Skipping %s reconciliation",
+			rc.logger.Debugf("Volume backup % is completed. Skipping %s reconciliation",
 				volumeBackup.Name)
 			continue
 		}

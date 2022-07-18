@@ -153,21 +153,11 @@ func (ctx *backupContext) Complete() error {
 		return nil
 	}
 
-	// if phase has not completed validation, ignore populating backup objects
-	if ctx.backup.Status.Phase == kahuapi.BackupPhaseInit {
-		return errors.New("backup has not finished validation")
-	}
-
 	// populate all backup resources in cache
 	err := ctx.populateCacheFromBackupSpec()
-	if err != nil {
-		return err
-	}
-
 	if err == nil {
 		ctx.isBackupCacheComplete = true
 	}
-
 	return err
 }
 
