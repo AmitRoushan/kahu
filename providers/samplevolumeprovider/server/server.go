@@ -45,7 +45,7 @@ func NewVolumeBackupService(ctx context.Context) *service {
 
 // StartBackup create backup of the provided volumes
 func (svc *service) StartBackup(ctx context.Context, req *pb.StartBackupRequest) (*pb.StartBackupResponse, error) {
-	log.Infof("Start Backup called with Request %+v", req)
+	log.Infof("Start Backup called for %s with %v", req.BackupContentName, req.Parameters)
 	identifiers := make([]*pb.BackupIdentifier, 0)
 	for _, pv := range req.Pv {
 		identifiers = append(identifiers, &pb.BackupIdentifier{
@@ -60,7 +60,8 @@ func (svc *service) StartBackup(ctx context.Context, req *pb.StartBackupRequest)
 
 // DeleteBackup delete given backup
 func (svc *service) DeleteBackup(ctx context.Context, req *pb.DeleteBackupRequest) (*pb.DeleteBackupResponse, error) {
-	log.Infof("Delete Backup called with Request %+v", req)
+	log.Infof("Delete Backup called for %s with %v", req.BackupContentName, req.Parameters)
+
 	return &pb.DeleteBackupResponse{}, nil
 }
 
@@ -71,7 +72,8 @@ func (svc *service) CancelBackup(context.Context, *pb.CancelBackupRequest) (*pb.
 
 // GetBackupStat get backup statistics
 func (svc *service) GetBackupStat(_ context.Context, req *pb.GetBackupStatRequest) (*pb.GetBackupStatResponse, error) {
-	log.Infof("GetBackupStat called with Request %+v", req)
+	log.Infof("GetBackupStat called for with %v", req.Parameters)
+
 	backupStat := make([]*pb.BackupStat, 0)
 	for _, handle := range req.BackupHandle {
 		backupStat = append(backupStat, &pb.BackupStat{
@@ -85,9 +87,21 @@ func (svc *service) GetBackupStat(_ context.Context, req *pb.GetBackupStatReques
 }
 
 // Create volume from backup (for restore)
-func (svc *service) CreateVolumeFromBackup(context.Context,
-	*pb.CreateVolumeFromBackupRequest) (*pb.CreateVolumeFromBackupResponse, error) {
-	return &pb.CreateVolumeFromBackupResponse{}, nil
+func (svc *service) CreateVolumeFromBackup(
+	_ context.Context,
+	req *pb.CreateVolumeFromBackupRequest) (*pb.CreateVolumeFromBackupResponse, error) {
+	log.Infof("CreateVolumeFromBackup called for %s with %v", req.RestoreContentName, req.Parameters)
+	identifiers := make([]*pb.RestoreVolumeIdentifier, 0)
+	for _, identifier := range req.RestoreInfo {
+		identifiers = append(identifiers, &pb.RestoreVolumeIdentifier{
+			PvcName:      identifier.Pvc.Name,
+			VolumeHandle: uuid.New().String(),
+		})
+	}
+
+	return &pb.CreateVolumeFromBackupResponse{
+		VolumeIdentifier: identifiers,
+	}, nil
 }
 
 // Cancel given restore
@@ -97,9 +111,20 @@ func (svc *service) CancelRestore(context.Context,
 }
 
 // Get restore statistics
-func (svc *service) GetRestoreStat(context.Context,
-	*pb.GetRestoreStatRequest) (*pb.GetRestoreStatResponse, error) {
-	return nil, nil
+func (svc *service) GetRestoreStat(_ context.Context,
+	req *pb.GetRestoreStatRequest) (*pb.GetRestoreStatResponse, error) {
+	log.Infof("GetRestoreStat called for with %v", req.Parameters)
+
+	backupStat := make([]*pb.RestoreStat, 0)
+	for _, handle := range req.RestoreVolumeHandle {
+		backupStat = append(backupStat, &pb.RestoreStat{
+			RestoreVolumeHandle: handle,
+			Progress:            100,
+		})
+	}
+	return &pb.GetRestoreStatResponse{
+		RestoreVolumeStat: backupStat,
+	}, nil
 }
 
 // GetProviderInfo returns the basic information from provider side
