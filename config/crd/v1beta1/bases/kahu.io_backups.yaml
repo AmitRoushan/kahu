@@ -344,8 +344,8 @@ spec:
                     type: string
                 type: object
               volumeBackupLocations:
-                description: IncludeProviders is a list of all provideres included
-                  for backup. If empty, all provideres are included
+                description: VolumeBackupLocations is a list of all volume providers
+                  included for backup. If empty, all providers are included
                 items:
                   type: string
                 type: array

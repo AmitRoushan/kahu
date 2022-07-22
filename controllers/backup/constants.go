@@ -40,27 +40,22 @@ const (
 
 type Phase int
 
-const (
-	BackupPhaseInvalid Phase = -1
-)
-
-var backupPhases = [...]kahuapi.BackupStage{
-	kahuapi.BackupStageInitial,
-	kahuapi.BackupStagePreHook,
-	kahuapi.BackupStageVolumes,
-	kahuapi.BackupStagePostHook,
-	kahuapi.BackupStageResources,
-	kahuapi.BackupStageFinished}
-
-func toIota(p kahuapi.BackupStage) Phase {
-	phase := BackupPhaseInvalid
-	for i, backupPhase := range backupPhases {
-		if backupPhase == p {
-			phase = Phase(i)
-			break
-		}
+func toOrdinal(p kahuapi.BackupStage) Phase {
+	switch p {
+	case kahuapi.BackupStageInitial:
+		return 0
+	case kahuapi.BackupStagePreHook:
+		return 1
+	case kahuapi.BackupStageVolumes:
+		return 2
+	case kahuapi.BackupStagePostHook:
+		return 3
+	case kahuapi.BackupStageResources:
+		return 4
+	case kahuapi.BackupStageFinished:
+		return 5
 	}
-	return phase
+	return -1
 }
 
 const (

@@ -18,8 +18,10 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +31,7 @@ import (
 	kahuclient "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	pb "github.com/soda-cdm/kahu/providers/lib/go"
+	"github.com/soda-cdm/kahu/utils"
 )
 
 // Reconciler runs a periodic loop to reconcile the current state of volume back and update
@@ -44,22 +47,28 @@ func NewReconciler(
 	logger log.FieldLogger,
 	volumeBackupClient kahuclient.VolumeBackupContentInterface,
 	volumeBackupLister kahulister.VolumeBackupContentLister,
+	backupLocationLister kahulister.BackupLocationLister,
+	providerLister kahulister.ProviderLister,
 	driverClient pb.VolumeBackupClient) Reconciler {
 	return &reconciler{
-		loopPeriod:         loopPeriod,
-		logger:             logger,
-		volumeBackupClient: volumeBackupClient,
-		volumeBackupLister: volumeBackupLister,
-		driverClient:       driverClient,
+		loopPeriod:           loopPeriod,
+		logger:               logger,
+		volumeBackupClient:   volumeBackupClient,
+		volumeBackupLister:   volumeBackupLister,
+		backupLocationLister: backupLocationLister,
+		providerLister:       providerLister,
+		driver:               driverClient,
 	}
 }
 
 type reconciler struct {
-	loopPeriod         time.Duration
-	logger             log.FieldLogger
-	volumeBackupClient kahuclient.VolumeBackupContentInterface
-	volumeBackupLister kahulister.VolumeBackupContentLister
-	driverClient       pb.VolumeBackupClient
+	loopPeriod           time.Duration
+	logger               log.FieldLogger
+	volumeBackupClient   kahuclient.VolumeBackupContentInterface
+	volumeBackupLister   kahulister.VolumeBackupContentLister
+	backupLocationLister kahulister.BackupLocationLister
+	providerLister       kahulister.ProviderLister
+	driver               pb.VolumeBackupClient
 }
 
 func (rc *reconciler) Run(stopCh <-chan struct{}) {
@@ -92,6 +101,15 @@ func (rc *reconciler) reconcile() {
 			continue
 		}
 
+		parameters, err := rc.getBackupParam(volumeBackup)
+		if err != nil {
+			_, err = rc.updateVolumeBackupStatus(volumeBackup, kahuapi.VolumeBackupContentStatus{
+				Phase:         kahuapi.VolumeBackupContentPhaseFailed,
+				FailureReason: fmt.Sprintf("Uanble to get backup parameters"),
+			})
+			continue
+		}
+
 		backupCurrentState := volumeBackup.Status.BackupState
 		backupHandles := make([]string, 0)
 		backupHandleMap := make(map[string]string, 0)
@@ -99,8 +117,9 @@ func (rc *reconciler) reconcile() {
 			backupHandles = append(backupHandles, state.BackupHandle)
 			backupHandleMap[state.BackupHandle] = state.VolumeName
 		}
-		stat, err := rc.driverClient.GetBackupStat(context.TODO(), &pb.GetBackupStatRequest{
+		stat, err := rc.driver.GetBackupStat(context.TODO(), &pb.GetBackupStatRequest{
 			BackupHandle: backupHandles,
+			Parameters:   parameters,
 		})
 		if err != nil {
 			rc.logger.Errorf("Unable to get volume backup state for %s. %s", volumeBackup.Name, err)
@@ -159,7 +178,7 @@ func (rc *reconciler) updateVolumeBackupStatus(backup *kahuapi.VolumeBackupConte
 	rc.logger.Infof("Updating status: volume backup content %s", backup.Name)
 	currentCopy := backup.DeepCopy()
 
-	if currentCopy.Status.Phase != "" &&
+	if status.Phase != "" &&
 		status.Phase != currentCopy.Status.Phase {
 		currentCopy.Status.Phase = status.Phase
 	}
@@ -181,4 +200,36 @@ func (rc *reconciler) updateVolumeBackupStatus(backup *kahuapi.VolumeBackupConte
 	return rc.volumeBackupClient.UpdateStatus(context.TODO(),
 		currentCopy,
 		metav1.UpdateOptions{})
+}
+
+func (rc *reconciler) getBackupParam(
+	backup *kahuapi.VolumeBackupContent) (map[string]string, error) {
+	parameters := make(map[string]string)
+
+	backupLocation, err := utils.GetBackupLocation(
+		rc.logger,
+		backup.Spec.BackupLocationName,
+		rc.backupLocationLister)
+	if err != nil {
+		rc.logger.Errorf("Unable to get backup location info. %s", err)
+		return parameters, errors.Wrap(err, "unable to get backup location parameters")
+	}
+
+	provider, err := utils.GetProvider(rc.logger,
+		backupLocation.Spec.ProviderName,
+		rc.providerLister)
+	if err != nil {
+		rc.logger.Errorf("Unable to get provider parameters. %s", err)
+		return parameters, errors.Wrap(err, "unable to get provider parameters")
+	}
+
+	for key, value := range provider.Spec.Manifest {
+		parameters[key] = value
+	}
+
+	for key, value := range backupLocation.Spec.Config {
+		parameters[key] = value
+	}
+
+	return parameters, nil
 }

@@ -42,11 +42,11 @@ spec:
           spec:
             description: VolumeBackupContentSpec defines the desired state of VolumeBackupContent
             properties:
+              backupLocationName:
+                description: Supported volume backup provider information
+                type: string
               backupName:
                 description: BackupName is backup CR name specified during backup
-                type: string
-              backupProviderLocation:
-                description: Supported volume backup provider information
                 type: string
               volumeProvider:
                 description: Volume provider for set of volumes
@@ -1158,7 +1158,6 @@ spec:
                 type: array
             required:
             - backupName
-            - backupProviderLocation
             type: object
           status:
             description: VolumeBackupContentStatus defines the observed state of VolumeBackupContent

@@ -406,7 +406,7 @@ func (ctrl *controller) updateBackupStatus(
 	backupClone := backup.DeepCopy()
 	dirty := false
 	// update Phase
-	if status.Stage != "" && toIota(backup.Status.Stage) < toIota(status.Stage) {
+	if status.Stage != "" && toOrdinal(backup.Status.Stage) < toOrdinal(status.Stage) {
 		backupClone.Status.Stage = status.Stage
 		dirty = true
 	}
@@ -424,20 +424,20 @@ func (ctrl *controller) updateBackupStatus(
 	}
 
 	// update Start time
-	if backup.Status.StartTimestamp == nil {
+	if backup.Status.StartTimestamp.IsZero() &&
+		!status.StartTimestamp.IsZero() {
 		backupClone.Status.StartTimestamp = status.StartTimestamp
 		dirty = true
 	}
 
-	if backup.Status.LastBackup == nil &&
-		status.LastBackup != nil {
+	if backup.Status.LastBackup.IsZero() &&
+		!status.LastBackup.IsZero() {
 		backupClone.Status.LastBackup = status.LastBackup
 		dirty = true
 	}
 
-	if len(backupClone.Status.Resources) == 0 {
-		backupClone.Status.Resources = append(backupClone.Status.Resources,
-			status.Resources...)
+	if len(status.Resources) > 0 {
+		mergeStatusResources(backupClone, status)
 		dirty = true
 	}
 
@@ -449,6 +449,25 @@ func (ctrl *controller) updateBackupStatus(
 	}
 
 	return backupClone, err
+}
+
+func mergeStatusResources(backup *kahuapi.Backup,
+	status kahuapi.BackupStatus) {
+	newResources := make([]kahuapi.BackupResource, 0)
+	for _, resource := range status.Resources {
+		found := false
+		for _, backupResource := range backup.Status.Resources {
+			if backupResource.Namespace == resource.Namespace &&
+				backupResource.ResourceName == resource.ResourceName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			newResources = append(newResources, resource)
+		}
+	}
+	backup.Status.Resources = append(backup.Status.Resources, newResources...)
 }
 
 func (ctrl *controller) updateBackupStatusWithEvent(

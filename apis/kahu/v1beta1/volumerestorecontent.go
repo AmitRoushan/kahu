@@ -37,7 +37,7 @@ type VolumeRestoreContentSpec struct {
 
 	// Supported volume backup provider information
 	// +required
-	BackupProviderLocation string `json:"backupProviderLocation"`
+	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
 type RestoreVolumeSpec struct {
@@ -45,7 +45,7 @@ type RestoreVolumeSpec struct {
 	BackupHandle string `json:"backupHandle"`
 
 	// +required
-	Claim v1.PersistentVolumeClaimSpec `json:"claim"`
+	Claim v1.PersistentVolumeClaim `json:"claim"`
 }
 
 // +kubebuilder:validation:Enum=New;InProgress;Completed;Failed;Deleting
@@ -61,9 +61,11 @@ const (
 )
 
 type VolumeRestoreState struct {
-	VolumeRef *v1.ObjectReference `json:"volumeRef,omitempty"`
+	VolumeName string `json:"volumeName,omitempty"`
 
 	VolumeHandle string `json:"backupHandle,omitempty"`
+
+	Progress int64 `json:"progress,omitempty"`
 }
 
 // VolumeRestoreContentStatus defines the observed state of VolumeRestoreContent

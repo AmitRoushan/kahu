@@ -29,30 +29,28 @@ import (
 )
 
 type mutationHandler interface {
-	handle(restore *kahuapi.Restore) error
+	handle(restore *kahuapi.Restore, indexer cache.Indexer) error
 }
 
-func constructMutationHandler(cache cache.Indexer, logger log.FieldLogger) mutationHandler {
-	return newNamespaceMutator(cache,
-		newServiceMutation(cache, logger))
+func constructMutationHandler(logger log.FieldLogger) mutationHandler {
+	return newNamespaceMutator(
+		newServiceMutation(logger))
 }
 
 type namespaceMutation struct {
-	cache cache.Indexer
-	next  mutationHandler
+	next mutationHandler
 }
 
-func newNamespaceMutator(cache cache.Indexer, next mutationHandler) mutationHandler {
+func newNamespaceMutator(next mutationHandler) mutationHandler {
 	return &namespaceMutation{
-		cache: cache,
-		next:  next,
+		next: next,
 	}
 }
 
-func (handler *namespaceMutation) handle(restore *kahuapi.Restore) error {
+func (handler *namespaceMutation) handle(restore *kahuapi.Restore, indexer cache.Indexer) error {
 	// perform namespace mutation
 	for oldNamespace, newNamespace := range restore.Spec.NamespaceMapping {
-		resourceList, err := handler.cache.ByIndex(backupObjectNamespaceIndex, oldNamespace)
+		resourceList, err := indexer.ByIndex(backupObjectNamespaceIndex, oldNamespace)
 		if err != nil {
 			return fmt.Errorf("failed to retrieve resources from cache for "+
 				"namespace mutation. %s", err)
@@ -69,14 +67,14 @@ func (handler *namespaceMutation) handle(restore *kahuapi.Restore) error {
 			newObject.SetNamespace(newNamespace)
 
 			// delete old cached object
-			err := handler.cache.Delete(resource)
+			err := indexer.Delete(resource)
 			if err != nil {
 				return fmt.Errorf("failed to delete resource from cache for "+
 					"namespace resource mutation. %s", err)
 			}
 
 			// add new object in cache
-			err = handler.cache.Add(newObject)
+			err = indexer.Add(newObject)
 			if err != nil {
 				return fmt.Errorf("failed to add resource in cache for "+
 					"namespace resource mutation. %s", err)
@@ -84,24 +82,22 @@ func (handler *namespaceMutation) handle(restore *kahuapi.Restore) error {
 		}
 	}
 
-	return handler.next.handle(restore)
+	return handler.next.handle(restore, indexer)
 }
 
 type serviceMutation struct {
-	cache  cache.Indexer
 	logger log.FieldLogger
 }
 
-func newServiceMutation(cache cache.Indexer, logger log.FieldLogger) mutationHandler {
+func newServiceMutation(logger log.FieldLogger) mutationHandler {
 	return &serviceMutation{
-		cache:  cache,
 		logger: logger,
 	}
 }
 
-func (handler *serviceMutation) handle(_ *kahuapi.Restore) error {
+func (handler *serviceMutation) handle(_ *kahuapi.Restore, indexer cache.Indexer) error {
 	// perform service IP
-	resourceList, err := handler.cache.ByIndex(backupObjectResourceIndex, utils.Service)
+	resourceList, err := indexer.ByIndex(backupObjectResourceIndex, utils.Service)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve resources from cache for "+
 			"namespace mutation. %s", err)
@@ -121,14 +117,14 @@ func (handler *serviceMutation) handle(_ *kahuapi.Restore) error {
 		}
 
 		// delete old cached object
-		err = handler.cache.Delete(resource)
+		err = indexer.Delete(resource)
 		if err != nil {
 			return fmt.Errorf("failed to delete resource from cache for "+
 				"service mutation. %s", err)
 		}
 
 		// add new object in cache
-		err = handler.cache.Add(newObject)
+		err = indexer.Add(newObject)
 		if err != nil {
 			return fmt.Errorf("failed to add resource in cache for "+
 				"service mutation. %s", err)

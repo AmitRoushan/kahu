@@ -25,38 +25,40 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"github.com/soda-cdm/kahu/utils"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
+	kahuscheme "github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
 	kahuclient "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/informers/externalversions"
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/controllers"
 	"github.com/soda-cdm/kahu/providerframework/volumeservice/backup/reconciler"
 	pb "github.com/soda-cdm/kahu/providers/lib/go"
+	"github.com/soda-cdm/kahu/utils"
 )
 
 const (
-	controllerName = "volume-content-backup"
+	controllerName = "volume-backup-content"
 
 	volumeBackupFinalizer = "kahu.io/volume-backup-protection"
 )
 
 type controller struct {
-	logger             log.FieldLogger
-	genericController  controllers.Controller
-	volumeBackupClient kahuclient.VolumeBackupContentInterface
-	volumeBackupLister kahulister.VolumeBackupContentLister
-	eventRecorder      record.EventRecorder
-	providerClient     pb.VolumeBackupClient
-	reconciler         reconciler.Reconciler
+	logger               log.FieldLogger
+	genericController    controllers.Controller
+	volumeBackupClient   kahuclient.VolumeBackupContentInterface
+	volumeBackupLister   kahulister.VolumeBackupContentLister
+	backupLocationLister kahulister.BackupLocationLister
+	providerLister       kahulister.ProviderLister
+	eventRecorder        record.EventRecorder
+	providerClient       pb.VolumeBackupClient
+	reconciler           reconciler.Reconciler
 }
 
 func NewController(kahuClient versioned.Interface,
@@ -67,10 +69,12 @@ func NewController(kahuClient versioned.Interface,
 
 	logger := log.WithField("controller", controllerName)
 	backupController := &controller{
-		logger:             logger,
-		volumeBackupClient: kahuClient.KahuV1beta1().VolumeBackupContents(),
-		volumeBackupLister: informer.Kahu().V1beta1().VolumeBackupContents().Lister(),
-		providerClient:     backupProviderClient,
+		logger:               logger,
+		volumeBackupClient:   kahuClient.KahuV1beta1().VolumeBackupContents(),
+		volumeBackupLister:   informer.Kahu().V1beta1().VolumeBackupContents().Lister(),
+		backupLocationLister: informer.Kahu().V1beta1().BackupLocations().Lister(),
+		providerLister:       informer.Kahu().V1beta1().Providers().Lister(),
+		providerClient:       backupProviderClient,
 	}
 
 	// construct controller interface to process worker queue
@@ -97,7 +101,7 @@ func NewController(kahuClient versioned.Interface,
 		)
 
 	// initialize event recorder
-	eventRecorder := eventBroadcaster.NewRecorder(scheme.Scheme,
+	eventRecorder := eventBroadcaster.NewRecorder(kahuscheme.Scheme,
 		v1.EventSource{Component: controllerName})
 	backupController.eventRecorder = eventRecorder
 
@@ -109,6 +113,8 @@ func NewController(kahuClient versioned.Interface,
 		logger.WithField("source", "reconciler"),
 		backupController.volumeBackupClient,
 		backupController.volumeBackupLister,
+		backupController.backupLocationLister,
+		backupController.providerLister,
 		backupController.providerClient)
 
 	go backupController.reconciler.Run(stopChan)
@@ -183,7 +189,16 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.VolumeBackupContent)
 	logger := ctrl.logger.WithField("backup", backup.Name)
 
 	switch backup.Status.Phase {
-	case "", kahuapi.VolumeBackupContentPhaseInit, kahuapi.VolumeBackupContentPhaseFailed:
+	case "", kahuapi.VolumeBackupContentPhaseInit:
+		parameters, err := ctrl.getBackupParam(backup)
+		if err != nil {
+			backup, err = ctrl.updateStatus(backup, kahuapi.VolumeBackupContentStatus{
+				Phase:         kahuapi.VolumeBackupContentPhaseFailed,
+				FailureReason: fmt.Sprintf("Uanble to get backup parameters"),
+			})
+			return err
+		}
+
 		volumes := make([]*v1.PersistentVolume, 0)
 		for _, vol := range backup.Spec.Volumes {
 			volumes = append(volumes, vol.DeepCopy())
@@ -191,6 +206,7 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.VolumeBackupContent)
 		response, err := ctrl.providerClient.StartBackup(context.Background(), &pb.StartBackupRequest{
 			BackupContentName: backup.Name,
 			Pv:                volumes,
+			Parameters:        parameters,
 		})
 		if err != nil {
 			ctrl.logger.Errorf("Unable to start backup. %s", err)
@@ -307,4 +323,36 @@ func (ctrl *controller) updateStatus(
 	return ctrl.volumeBackupClient.UpdateStatus(context.TODO(),
 		backup,
 		metav1.UpdateOptions{})
+}
+
+func (ctrl *controller) getBackupParam(
+	backup *kahuapi.VolumeBackupContent) (map[string]string, error) {
+	parameters := make(map[string]string)
+
+	backupLocation, err := utils.GetBackupLocation(
+		ctrl.logger,
+		backup.Spec.BackupLocationName,
+		ctrl.backupLocationLister)
+	if err != nil {
+		ctrl.logger.Errorf("Unable to get backup location info. %s", err)
+		return parameters, errors.Wrap(err, "unable to get backup location parameters")
+	}
+
+	provider, err := utils.GetProvider(ctrl.logger,
+		backupLocation.Spec.ProviderName,
+		ctrl.providerLister)
+	if err != nil {
+		ctrl.logger.Errorf("Unable to get provider parameters. %s", err)
+		return parameters, errors.Wrap(err, "unable to get provider parameters")
+	}
+
+	for key, value := range provider.Spec.Manifest {
+		parameters[key] = value
+	}
+
+	for key, value := range backupLocation.Spec.Config {
+		parameters[key] = value
+	}
+
+	return parameters, nil
 }

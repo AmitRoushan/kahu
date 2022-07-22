@@ -315,10 +315,7 @@ message RestoreStat {
   string restore_volume_handle = 1;
 
   // optional
-  int64 total_bytes = 2;
-
-  // optional
-  int64 bytes_done = 3;
+  int64 progress = 9;
 }
 
 message GetRestoreStatResponse {

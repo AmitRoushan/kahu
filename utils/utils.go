@@ -16,6 +16,8 @@ package utils
 import (
 	"context"
 	"fmt"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"os"
 	"os/signal"
 	"regexp"
@@ -25,15 +27,16 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 	providerservice "github.com/soda-cdm/kahu/providers/lib/go"
 )
@@ -175,7 +178,6 @@ func Probe(conn grpc.ClientConnInterface, timeout time.Duration) error {
 	}
 }
 
-
 func GetMetaserviceDeleteClient(address string, port uint) metaservice.MetaServiceClient {
 
 	grpcconn, err := metaservice.NewLBDial(fmt.Sprintf("%s:%d", address, port), grpc.WithInsecure())
@@ -205,7 +207,7 @@ func GetSubItemStrings(allList []string, input string, isRegex bool) []string {
 	return subItemList
 }
 
-func FindMatchedStrings(kind string, allList []string, includeList, excludeList []v1beta1.ResourceSpec) []string {
+func FindMatchedStrings(kind string, allList []string, includeList, excludeList []kahuapi.ResourceSpec) []string {
 	var collectAllIncludeds []string
 	var collectAllExcludeds []string
 
@@ -229,4 +231,40 @@ func FindMatchedStrings(kind string, allList []string, includeList, excludeList 
 	}
 
 	return collectAllIncludeds
+}
+
+func GetBackupLocation(
+	logger log.FieldLogger,
+	locationName string,
+	backupLocationLister kahulister.BackupLocationLister) (*kahuapi.BackupLocation, error) {
+	// fetch backup location
+	backupLocation, err := backupLocationLister.Get(locationName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Errorf("Backup location(%s) do not exist", locationName)
+			return nil, err
+		}
+		logger.Errorf("Failed to get backup location. %s", err)
+		return nil, err
+	}
+
+	return backupLocation, err
+}
+
+func GetProvider(
+	logger log.FieldLogger,
+	providerName string,
+	providerLister kahulister.ProviderLister) (*kahuapi.Provider, error) {
+	// fetch provider
+	provider, err := providerLister.Get(providerName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Errorf("Metadata Provider(%s) do not exist", providerName)
+			return nil, err
+		}
+		logger.Errorf("Failed to get metadata provider. %s", err)
+		return nil, err
+	}
+
+	return provider, nil
 }

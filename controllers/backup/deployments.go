@@ -275,7 +275,7 @@ func (ctrl *controller) getStorageClass(backup *PrepareBackup,
 		allSCList = append(allSCList, sc.Name)
 	}
 
-	allSCList = utils.FindMatchedStrings(utils.Sc, allSCList, backup.Spec.IncludeResources,
+	allSCList = utils.FindMatchedStrings(utils.SC, allSCList, backup.Spec.IncludeResources,
 		backup.Spec.ExcludeResources)
 
 	for _, item := range allSC.Items {

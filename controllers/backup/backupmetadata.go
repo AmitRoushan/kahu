@@ -196,7 +196,7 @@ func (ctrl *controller) runBackup(backup *PrepareBackup) error {
 				} else {
 					backup.Status.Stage = kahuapi.BackupStageFinished
 				}
-			case utils.Sc:
+			case utils.SC:
 				err = ctrl.getStorageClass(backup, backupClient)
 				if err != nil {
 					backup.Status.State = kahuapi.BackupStateFailed

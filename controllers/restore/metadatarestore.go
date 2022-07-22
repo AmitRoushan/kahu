@@ -19,23 +19,14 @@ package restore
 import (
 	"context"
 	"fmt"
+	"k8s.io/client-go/tools/cache"
 	"reflect"
 
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/util/sets"
-
-	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
-)
-
-var (
-	excludeResources = sets.NewString(
-		"Node",
-		"Namespace",
-		"Event",
-	)
 )
 
 type backupInfo struct {
@@ -44,12 +35,12 @@ type backupInfo struct {
 	backupProvider *kahuapi.Provider
 }
 
-func (ctx *restoreContext) syncMetadataRestore(restore *kahuapi.Restore) error {
+func (ctx *restoreContext) syncMetadataRestore(restore *kahuapi.Restore, indexer cache.Indexer) error {
 	// metadata restore should be last step for restore
 	ctx.logger.Infof("Restore in %s phase", kahuapi.RestoreStageResources)
 
 	// process CRD resource first
-	err := ctx.applyCRD()
+	err := ctx.applyCRD(indexer)
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = fmt.Sprintf("Failed to apply CRD resources. %s", err)
@@ -58,7 +49,7 @@ func (ctx *restoreContext) syncMetadataRestore(restore *kahuapi.Restore) error {
 	}
 
 	// process resources
-	err = ctx.applyIndexedResource()
+	err = ctx.applyIndexedResource(indexer)
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = fmt.Sprintf("Failed to apply resources. %s", err)
@@ -68,15 +59,14 @@ func (ctx *restoreContext) syncMetadataRestore(restore *kahuapi.Restore) error {
 
 	restore.Status.Stage = kahuapi.RestoreStageFinished
 	restore.Status.State = kahuapi.RestoreStateCompleted
-	restore.Status.State = kahuapi.RestoreStateCompleted
 	time := metav1.Now()
 	restore.Status.CompletionTimestamp = &time
 	restore, err = ctx.updateRestoreStatus(restore)
 	return err
 }
 
-func (ctx *restoreContext) applyCRD() error {
-	crds, err := ctx.backupObjectIndexer.ByIndex(backupObjectResourceIndex, crdName)
+func (ctx *restoreContext) applyCRD(indexer cache.Indexer) error {
+	crds, err := indexer.ByIndex(backupObjectResourceIndex, crdName)
 	if err != nil {
 		ctx.logger.Errorf("error fetching CRDs from indexer %s", err)
 		return err
@@ -102,8 +92,8 @@ func (ctx *restoreContext) applyCRD() error {
 	return nil
 }
 
-func (ctx *restoreContext) applyIndexedResource() error {
-	indexedResources := ctx.backupObjectIndexer.List()
+func (ctx *restoreContext) applyIndexedResource(indexer cache.Indexer) error {
+	indexedResources := indexer.List()
 
 	unstructuredResources := make([]*unstructured.Unstructured, 0)
 	for _, indexedResource := range indexedResources {

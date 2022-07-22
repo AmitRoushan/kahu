@@ -42,7 +42,7 @@ import (
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
-	kahuv1client "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
+	kahuclient "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/informers/externalversions"
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/controllers"
@@ -54,12 +54,13 @@ type controller struct {
 	genericController    controllers.Controller
 	kubeClient           kubernetes.Interface
 	dynamicClient        dynamic.Interface
-	restoreClient        kahuv1client.RestoreInterface
+	restoreClient        kahuclient.RestoreInterface
 	discoveryHelper      discovery.DiscoveryHelper
 	restoreLister        kahulister.RestoreLister
 	backupLister         kahulister.BackupLister
 	backupLocationLister kahulister.BackupLocationLister
 	providerLister       kahulister.ProviderLister
+	restoreVolumeClient  kahuclient.VolumeRestoreContentInterface
 }
 
 func NewController(kubeClient kubernetes.Interface,
@@ -79,6 +80,7 @@ func NewController(kubeClient kubernetes.Interface,
 		backupLister:         informer.Kahu().V1beta1().Backups().Lister(),
 		backupLocationLister: informer.Kahu().V1beta1().BackupLocations().Lister(),
 		providerLister:       informer.Kahu().V1beta1().Providers().Lister(),
+		restoreVolumeClient:  kahuClient.KahuV1beta1().VolumeRestoreContents(),
 	}
 
 	// construct controller interface to process worker queue
@@ -110,18 +112,20 @@ type restoreContext struct {
 	kubeClient           kubernetes.Interface
 	dynamicClient        dynamic.Interface
 	discoveryHelper      discovery.DiscoveryHelper
-	restoreClient        kahuv1client.RestoreInterface
+	restoreClient        kahuclient.RestoreInterface
 	restoreLister        kahulister.RestoreLister
 	backupLister         kahulister.BackupLister
 	backupLocationLister kahulister.BackupLocationLister
 	providerLister       kahulister.ProviderLister
+	restoreVolumeClient  kahuclient.VolumeRestoreContentInterface
 	backupObjectIndexer  cache.Indexer
 	filter               filterHandler
 	mutator              mutationHandler
+	resolver             Interface
 }
 
 func newRestoreContext(name string, ctrl *controller) *restoreContext {
-	backupObjectIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, newBackupObjectIndexers())
+	backupObjectIndexer := cache.NewIndexer(uidKeyFunc, newBackupObjectIndexers())
 	logger := ctrl.logger.WithField("restore", name)
 	return &restoreContext{
 		logger:               logger,
@@ -134,9 +138,23 @@ func newRestoreContext(name string, ctrl *controller) *restoreContext {
 		dynamicClient:        ctrl.dynamicClient,
 		discoveryHelper:      ctrl.discoveryHelper,
 		backupObjectIndexer:  backupObjectIndexer,
-		filter:               constructFilterHandler(backupObjectIndexer, logger),
-		mutator:              constructMutationHandler(backupObjectIndexer, logger),
+		restoreVolumeClient:  ctrl.restoreVolumeClient,
+		filter:               constructFilterHandler(logger.WithField("context", "filter")),
+		mutator:              constructMutationHandler(logger.WithField("context", "mutator")),
+		resolver:             NewResolver(logger.WithField("context", "resolver")),
 	}
+}
+
+func uidKeyFunc(obj interface{}) (string, error) {
+	if key, ok := obj.(cache.ExplicitKey); ok {
+		return string(key), nil
+	}
+	meta, err := meta.Accessor(obj)
+	if err != nil {
+		return "", fmt.Errorf("object has no meta: %v", err)
+	}
+
+	return string(meta.GetUID()), nil
 }
 
 func newBackupObjectIndexers() cache.Indexers {
@@ -292,8 +310,13 @@ func (ctx *restoreContext) syncRestore(restore *kahuapi.Restore) error {
 		return err
 	}
 
+	restoreIndexer, err := ctx.cloneIndexer()
+	if err != nil {
+		return err
+	}
+
 	// filter resources from cache
-	err = ctx.filter.handle(restore)
+	err = ctx.filter.handle(restore, restoreIndexer)
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		errMsg := fmt.Sprintf("Failed to filter resources. %s", err)
@@ -302,8 +325,17 @@ func (ctx *restoreContext) syncRestore(restore *kahuapi.Restore) error {
 		return err
 	}
 
+	// resolve dependencies for restore candidates
+	err = ctx.resolver.Resolve(restoreIndexer, ctx.backupObjectIndexer)
+	if err != nil {
+		restore.Status.State = kahuapi.RestoreStateFailed
+		restore.Status.FailureReason = fmt.Sprintf("Failed to get dependency resources. %s", err)
+		restore, err = ctx.updateRestoreStatus(restore)
+		return err
+	}
+
 	// add mutation
-	err = ctx.mutator.handle(restore)
+	err = ctx.mutator.handle(restore, restoreIndexer)
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = fmt.Sprintf("Failed to mutate resources. %s", err)
@@ -311,7 +343,7 @@ func (ctx *restoreContext) syncRestore(restore *kahuapi.Restore) error {
 		return err
 	}
 
-	return ctx.syncMetadataRestore(restore)
+	return ctx.syncVolumeRestore(restore, restoreIndexer)
 }
 
 func (ctx *restoreContext) validateRestore(restore *kahuapi.Restore) {
@@ -516,6 +548,20 @@ func (ctx *restoreContext) fetchBackupContent(backupProvider *kahuapi.Provider,
 	}
 
 	return nil
+}
+
+func (ctx *restoreContext) cloneIndexer() (cache.Indexer, error) {
+	restoreObjectIndexer := cache.NewIndexer(uidKeyFunc, newBackupObjectIndexers())
+
+	for _, restoreObj := range ctx.backupObjectIndexer.List() {
+		err := restoreObjectIndexer.Add(restoreObj)
+		if err != nil {
+			ctx.logger.Errorf("Unable to clone backup objects for restore. %s", err)
+			return restoreObjectIndexer, errors.Wrap(err, "unable to clone backup objects for restore")
+		}
+	}
+
+	return restoreObjectIndexer, nil
 }
 
 func (ctx *restoreContext) excludeResource(resource *unstructured.Unstructured) bool {

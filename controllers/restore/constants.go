@@ -16,13 +16,25 @@ limitations under the License.
 
 package restore
 
+import "k8s.io/apimachinery/pkg/util/sets"
+
 const (
 	controllerName                   = "restore-controller"
 	backupObjectNamespaceIndex       = "backupObject-namespace-index"
 	backupObjectResourceIndex        = "backupObject-resource-index"
 	backupObjectClusterResourceIndex = "backupObject-cluster-resource-index"
+
+	annVolumeRestoreCompleted = "kahu.io/volume-restore-completed"
 )
 
 const (
 	crdName = "CustomResourceDefinition"
+)
+
+var (
+	excludeResources = sets.NewString(
+		"Node",
+		"Namespace",
+		"Event",
+	)
 )

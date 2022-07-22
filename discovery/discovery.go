@@ -147,7 +147,7 @@ func (helper *discoverHelper) ByGroupVersionKind(
 	helper.lock.RLock()
 	defer helper.lock.RUnlock()
 
-	if obj, exist, err := helper.apiIndexedResources.GetByKey(input.String()); err != nil && exist {
+	if obj, exist, err := helper.apiIndexedResources.GetByKey(input.String()); err == nil && exist {
 		resource, err := getAPIResource(obj)
 		if err != nil {
 			log.Warningf("invalid api resource %s", reflect.TypeOf(obj))

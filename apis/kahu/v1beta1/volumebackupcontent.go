@@ -36,8 +36,8 @@ type VolumeBackupContentSpec struct {
 	VolumeProvider *string `json:"volumeProvider,omitempty"`
 
 	// Supported volume backup provider information
-	// +required
-	BackupProviderLocation string `json:"backupProviderLocation"`
+	// +optional
+	BackupLocationName string `json:"backupLocationName,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=New;InProgress;Completed;Failed;Deleting
