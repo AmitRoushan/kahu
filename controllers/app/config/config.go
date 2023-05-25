@@ -29,6 +29,7 @@ import (
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
 	kahuinformer "github.com/soda-cdm/kahu/client/informers/externalversions"
 	"github.com/soda-cdm/kahu/controllers/backup"
+	"github.com/soda-cdm/kahu/controllers/restore"
 	"github.com/soda-cdm/kahu/discovery"
 	"github.com/soda-cdm/kahu/framework"
 	"github.com/soda-cdm/kahu/hooks"
@@ -40,16 +41,17 @@ const (
 )
 
 type Config struct {
-	ControllerWorkers      int
-	EnableLeaderElection   bool
-	DisableControllers     []string
-	KahuClientConfig       client.Config
-	BackupControllerConfig backup.Config
-	FrameworkConfig        framework.Config
-	LeaderLockNamespace    string
-	LeaderLeaseDuration    time.Duration
-	LeaderRenewDeadline    time.Duration
-	LeaderRetryPeriod      time.Duration
+	ControllerWorkers       int
+	EnableLeaderElection    bool
+	DisableControllers      []string
+	KahuClientConfig        client.Config
+	BackupControllerConfig  backup.Config
+	RestoreControllerConfig restore.Config
+	FrameworkConfig         framework.Config
+	LeaderLockNamespace     string
+	LeaderLeaseDuration     time.Duration
+	LeaderRenewDeadline     time.Duration
+	LeaderRetryPeriod       time.Duration
 }
 
 type CompletedConfig struct {

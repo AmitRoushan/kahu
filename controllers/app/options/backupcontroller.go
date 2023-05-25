@@ -25,7 +25,9 @@ type BackupControllerFlags struct {
 
 func NewBackupControllerFlags() *BackupControllerFlags {
 	return &BackupControllerFlags{
-		&backup.Config{},
+		&backup.Config{
+			ConcurrentBackupCount: backup.DefaultConcurrentBackupCount,
+		},
 	}
 }
 
@@ -34,10 +36,13 @@ func (opt *BackupControllerFlags) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVarP(&opt.SupportedResources, "supportedResources", "s",
 		opt.SupportedResources,
 		"resources list, which will be consider for backup. Example: --supportedResources=Pod,Deployment")
+	fs.IntVar(&opt.ConcurrentBackupCount, "concurrentBackupCount", opt.ConcurrentBackupCount,
+		"max number of concurrent backup")
 }
 
 // ApplyTo checks validity of available command line options
 func (opt *BackupControllerFlags) ApplyTo(cfg *backup.Config) error {
 	cfg.SupportedResources = opt.SupportedResources
+	cfg.ConcurrentBackupCount = opt.ConcurrentBackupCount
 	return nil
 }

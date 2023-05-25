@@ -52,12 +52,17 @@ import (
 )
 
 const (
-	defaultRestoreWorkers = 50
+	DefaultConcurrentRestoreCount = 50
 )
+
+type Config struct {
+	ConcurrentRestoreCount int
+}
 
 type controller struct {
 	ctx                  context.Context
 	logger               log.FieldLogger
+	config               Config
 	genericController    controllers.Controller
 	kubeClient           kubernetes.Interface
 	dynamicClient        dynamic.Interface
@@ -80,6 +85,7 @@ type controller struct {
 
 func NewController(
 	ctx context.Context,
+	config Config,
 	kubeClient kubernetes.Interface,
 	kahuClient versioned.Interface,
 	dynamicClient dynamic.Interface,
@@ -94,6 +100,7 @@ func NewController(
 	restoreController := &controller{
 		ctx:                  ctx,
 		logger:               logger,
+		config:               config,
 		kubeClient:           kubeClient,
 		dynamicClient:        dynamicClient,
 		discoveryHelper:      discoveryHelper,
@@ -135,7 +142,7 @@ func NewController(
 	restoreController.genericController = genericController
 	restoreController.restorer = restorer.NewRestorer(logger, restoreController.processRestore)
 
-	go restoreController.restorer.Run(ctx, defaultRestoreWorkers)
+	go restoreController.restorer.Run(ctx, config.ConcurrentRestoreCount)
 	return genericController, err
 }
 

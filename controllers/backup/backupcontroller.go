@@ -56,21 +56,22 @@ import (
 )
 
 const (
-	defaultBackupper      = 50
-	buildInfoFile         = "build"
-	kubernetesVersionFile = "kubernetes-version"
-	childrenFile          = "children"
+	DefaultConcurrentBackupCount = 50
+	buildInfoFile                = "build"
+	kubernetesVersionFile        = "kubernetes-version"
+	childrenFile                 = "children"
 
 	waitForSnapshotTimeout = 10 * time.Minute
 )
 
 type Config struct {
-	SupportedResources string
+	SupportedResources    string
+	ConcurrentBackupCount int
 }
 
 type controller struct {
 	ctx                context.Context
-	config             *Config
+	config             Config
 	logger             log.FieldLogger
 	genericController  controllers.Controller
 	kubeClient         kubernetes.Interface
@@ -93,7 +94,7 @@ type controller struct {
 
 func NewController(
 	ctx context.Context,
-	config *Config,
+	config Config,
 	kubeClient kubernetes.Interface,
 	kahuClient versioned.Interface,
 	dynamicClient dynamic.Interface,
@@ -160,7 +161,7 @@ func NewController(
 	backupController.backupper = backupper.NewBackupper(logger, backupController.processBackup)
 
 	// start backupper
-	go backupController.backupper.Run(ctx, defaultBackupper)
+	go backupController.backupper.Run(ctx, config.ConcurrentBackupCount)
 
 	return genericController, err
 }
@@ -381,15 +382,17 @@ func (ctrl *controller) processBackup(key string) error {
 		return errors.Wrap(err, fmt.Sprintf("error getting backup %s from lister", name))
 	}
 
+	// process backup delete request
 	if backup.DeletionTimestamp != nil {
 		return ctrl.deleteBackup(backup)
 	}
 
+	// ignore backup if backup object getting deleted, failed or completed already
 	if ignoreBackupSync(backup) {
 		return nil
 	}
 
-	// get resource from backup spec
+	// collect k8s objects based on backup status
 	resourceCache, err := ctrl.collector.FetchByStatus(backup)
 	if err != nil {
 		return err
@@ -400,12 +403,12 @@ func (ctrl *controller) processBackup(key string) error {
 	if err != nil {
 		return err
 	}
+	defer blService.Done()
 	bl, err := blService.Start(ctrl.ctx)
 	if err != nil {
 		return err
 	}
 	defer bl.Close()
-	defer blService.Done()
 
 	// start backup resources and its dependencies
 	backup, err = ctrl.backupResources(resourceCache.List(), backup, resourceCache, bl)

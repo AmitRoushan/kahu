@@ -149,7 +149,7 @@ func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controll
 
 	backupController, err := backup.NewController(
 		mgr.ctx,
-		&mgr.completeConfig.BackupControllerConfig,
+		mgr.completeConfig.BackupControllerConfig,
 		mgr.kubeClient,
 		mgr.kahuClient,
 		mgr.completeConfig.DynamicClient,
@@ -167,6 +167,7 @@ func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controll
 	// integrate restore controller
 	restoreController, err := restore.NewController(
 		mgr.ctx,
+		mgr.completeConfig.RestoreControllerConfig,
 		mgr.completeConfig.KubeClient,
 		mgr.kahuClient,
 		mgr.completeConfig.DynamicClient,

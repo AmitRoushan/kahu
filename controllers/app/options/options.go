@@ -27,20 +27,22 @@ import (
 )
 
 type optionsManager struct {
-	manager          *controllerManagerOptions
-	log              *logoptions.LogOptions
-	kahuClient       *kahuClientOptions
-	backupController *BackupControllerFlags
-	framework        *FrameworkFlags
+	manager           *controllerManagerOptions
+	log               *logoptions.LogOptions
+	kahuClient        *kahuClientOptions
+	backupController  *BackupControllerFlags
+	restoreController *RestoreControllerFlags
+	framework         *FrameworkFlags
 }
 
 func NewOptionsManager() (*optionsManager, error) {
 	return &optionsManager{
-		manager:          NewGenericControllerOptions(),
-		log:              logoptions.NewLogOptions(),
-		kahuClient:       NewKahuClientOptions(),
-		backupController: NewBackupControllerFlags(),
-		framework:        NewFrameworkFlags(),
+		manager:           NewGenericControllerOptions(),
+		log:               logoptions.NewLogOptions(),
+		kahuClient:        NewKahuClientOptions(),
+		backupController:  NewBackupControllerFlags(),
+		restoreController: NewRestoreControllerFlags(),
+		framework:         NewFrameworkFlags(),
 	}, nil
 }
 
@@ -49,6 +51,7 @@ func (opt *optionsManager) AddFlags(fs *pflag.FlagSet) {
 	opt.log.AddFlags(fs)
 	opt.kahuClient.AddFlags(fs)
 	opt.backupController.AddFlags(fs)
+	opt.restoreController.AddFlags(fs)
 	opt.framework.AddFlags(fs)
 }
 
@@ -63,6 +66,9 @@ func (opt *optionsManager) ApplyTo(cfg *config.Config) error {
 		return err
 	}
 	if err := opt.backupController.ApplyTo(&cfg.BackupControllerConfig); err != nil {
+		return err
+	}
+	if err := opt.restoreController.ApplyTo(&cfg.RestoreControllerConfig); err != nil {
 		return err
 	}
 	if err := opt.framework.ApplyTo(&cfg.FrameworkConfig); err != nil {
