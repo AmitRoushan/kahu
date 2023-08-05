@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kahu
+  namespace: {{ (.Values.global).namespace | default "kahu" }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kahu-backup-clusterrole
+  labels:
+    provisioner: kahu
+rules:
+  - apiGroups: ["kahu.io"]
+    resources: ["backups", "backups/status", "restores", "restores/status", "backuplocations", "backuplocations/status", "providers", "providers/status", "providerregistrations", "providerregistrations/status", "volumebackupcontents", "volumebackupcontents/status", "volumerestorecontents", "volumerestorecontents/status","volumesnapshots", "volumesnapshots/status", "volumegroups", "volumegroups/status"]
+    verbs: ["get", "list", "watch", "patch", "update", "delete"]
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["create", "get", "list", "delete", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resourceNames: ["backup"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: [ "rbac.authorization.k8s.io" ]
+    resources: [ "clusterroles", "roles" ]
+    verbs: [ "bind", "escalate" ]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    provisioner: kahu
+  name: kahu-backup-clusterrole-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kahu-backup-clusterrole
+subjects:
+  - kind: ServiceAccount
+    name: kahu
+    namespace: {{ (.Values.global).namespace | default "kahu" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kahu-service
+  namespace: {{ (.Values.global).namespace | default "kahu" }}
+spec:
+  replicas: {{ (.Values.global).replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: backuprestore-controllers
+  template:
+    metadata:
+      labels:
+        app: backuprestore-controllers
+    spec:
+      serviceAccountName: kahu
+      containers:
+        - name: backup
+          image: {{ .Values.image.backupImage }}
+          {{ if (.Values.image).pullPolicy }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{ else }}
+          imagePullPolicy: IfNotPresent
+          {{ end }}
+          command: ["controller-manager"]
+          args:
+            #example of adding custom resourceList for backup. resources should be separated by comma
+            - --metaServiceImage={{ .Values.image.metadataServiceImage }}
+            - --volumeServiceImage={{ .Values.image.volumeBackupServiceImage }}

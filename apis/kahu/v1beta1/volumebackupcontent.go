@@ -44,7 +44,9 @@ type VolumeBackupContentSpec struct {
 type BackupVolumeReference struct {
 	Volume      ResourceReference `json:"volume,omitempty"`
 	CSISnapshot *CSISnapshotData  `json:"csiSnapshot,omitempty"`
-	Snapshot    *SnapshotData     `json:"snapshot,omitempty"`
+	// restoreSize represents the complete size of the snapshot in bytes.
+	RestoreSize *int64        `json:"restoreSize,omitempty"`
+	Snapshot    *SnapshotData `json:"snapshot,omitempty"`
 }
 
 type SnapshotData struct {

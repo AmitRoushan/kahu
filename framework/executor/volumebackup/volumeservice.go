@@ -22,7 +22,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	appv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -43,18 +42,19 @@ const (
 	DefaultServicePort         = 443
 	defaultContainerPort       = 8181
 	defaultContainerName       = "volume-service"
-	defaultCommand             = "/usr/local/bin/volume-service"
+	defaultCommand             = "volume-service"
 	metaServicePortArg         = "-p"
 	defaultServicePortName     = "grpc"
 	defaultUnixSocketVolName   = "socket"
 	defaultUnixSocketMountPath = "/tmp"
 	DefaultVolumeServiceImage  = "sodacdm/kahu-volume-service:v1.0.0"
+	DefaultBackupVolumePath    = "/source"
 )
 
 var (
 	backupBackoff = wait.Backoff{
-		Duration: time.Second * 5,
-		Steps:    3,
+		Duration: time.Second * 10,
+		Steps:    6,
 	}
 	csiVolSnapshotGroup = k8sresource.CSIVolumeSnapshotGVK.Group
 	csiVolumeNodePath   = "/var/lib/kubelet/pods/%s/volumes/kubernetes.io~csi/%s/mount"
@@ -128,23 +128,42 @@ func (svc *service) constructBackupRequest(vbc *kahuapi.VolumeBackupContent) (*v
 	backupReq.BackupContentName = vbc.Name
 	backupReq.Parameters = vbc.Spec.Parameters
 
-	backupInfo := make([]volumeservice.BackupVolume, 0)
+	backupInfo := make([]*volumeservice.BackupVolume, 0)
 	for _, volumeRef := range vbc.Spec.VolumeRef {
 		pv, err := svc.getPersistanceVolumeFromRef(volumeRef.Volume)
 		if err != nil {
 			return nil, err
 		}
 
-		backupInfo = append(backupInfo, volumeservice.BackupVolume{
-			Pv: pv,
-			Snapshot: &volumeservice.Snapshot{
+		backupVolume := &volumeservice.BackupVolume{
+			Pv:        pv,
+			MountPath: DefaultBackupVolumePath,
+		}
+
+		if volumeRef.Snapshot != nil {
+			backupVolume.Snapshot = &volumeservice.Snapshot{
 				SnapshotHandle:     volumeRef.Snapshot.Handle,
 				SnapshotAttributes: volumeRef.Snapshot.Attribute,
-			},
-		})
+			}
+		}
+
+		if volumeRef.CSISnapshot != nil {
+			backupVolume.Snapshot = &volumeservice.Snapshot{
+				SnapshotHandle:     volumeRef.CSISnapshot.Handle,
+				SnapshotAttributes: volumeRef.CSISnapshot.Attribute,
+			}
+		}
+
+		backupInfo = append(backupInfo, backupVolume)
 	}
 
-	return nil, nil
+	backupReq.BackupInfo = backupInfo
+
+	if svc.backupLocation.Spec.Location != nil {
+		backupReq.Location = *svc.backupLocation.Spec.Location.Path
+	}
+
+	return backupReq, nil
 }
 
 func (svc *service) getPersistanceVolumeFromRef(volume kahuapi.ResourceReference) (*corev1.PersistentVolume, error) {
@@ -243,7 +262,7 @@ func (svc *service) backupWithVolumeSupport(ctx context.Context, vbc *kahuapi.Vo
 	// create a pod for each volume
 	for _, replicaSet := range replicaSets {
 		svc.logger.Infof("Start backup for pause pod from replicaset[%s/%s]", replicaSet.Namespace, replicaSet.Name)
-		err := svc.backupVolumeFromPauseReplicaSet(ctx, replicaSet)
+		err := svc.backupVolumeFromPauseReplicaSet(ctx, vbc, replicaSet)
 		if err != nil {
 			return err
 		}
@@ -253,27 +272,21 @@ func (svc *service) backupWithVolumeSupport(ctx context.Context, vbc *kahuapi.Vo
 }
 
 func (svc *service) backupVolumeFromPauseReplicaSet(ctx context.Context,
+	vbc *kahuapi.VolumeBackupContent,
 	replicaSet *appv1.ReplicaSet) error {
-	podSelector := replicaSet.Spec.Selector
 	namespace := replicaSet.Namespace
-
-	svc.logger.Infof("Pod selector [%s] ", podSelector.String())
-	podlabelSelector, err := metav1.LabelSelectorAsSelector(podSelector)
-	if err != nil {
-		return err
-	}
-	var pods *corev1.PodList
-	err = wait.ExponentialBackoffWithContext(ctx, backupBackoff, func() (done bool, err error) {
-		svc.logger.Infof("Checking pause pod with selector[%s] ", podlabelSelector.String())
-		pods, err = svc.kubeClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: podlabelSelector.String(),
-		})
+	err := wait.ExponentialBackoffWithContext(ctx, backupBackoff, func() (done bool, err error) {
+		svc.logger.Infof("Checking pause replicaset status[%s] ", replicaSet.Name)
+		replicaset, err := svc.kubeClient.AppsV1().ReplicaSets(namespace).Get(ctx, replicaSet.Name, metav1.GetOptions{})
 		if err != nil {
-			svc.logger.Warnf("Unable to list pause replicaset[%s/%s] pods[] for backup", replicaSet.Namespace, replicaSet.Name)
-			return false, err
+			svc.logger.Warnf("Unable to list pause replicaset[%s/%s] for backup", replicaSet.Namespace, replicaSet.Name)
+			return false, nil
 		}
-		if len(pods.Items) < 1 {
-			return false, fmt.Errorf("replicaset[%s/%s] pods is still not available for backup", replicaSet.Namespace, replicaSet.Name)
+
+		if replicaset.Status.AvailableReplicas != *replicaset.Spec.Replicas {
+			svc.logger.Infof("Replicas are anaviable for pause replicaset[%s/%s] for backup. Available[%d]/Desired[%d] ",
+				replicaSet.Namespace, replicaSet.Name, replicaset.Status.AvailableReplicas, *replicaset.Spec.Replicas)
+			return false, nil
 		}
 
 		return true, nil
@@ -283,6 +296,23 @@ func (svc *service) backupVolumeFromPauseReplicaSet(ctx context.Context,
 		return err
 	}
 
+	podSelector := replicaSet.Spec.Selector
+	svc.logger.Infof("Pod selector [%s] ", podSelector.String())
+	podlabelSelector, err := metav1.LabelSelectorAsSelector(podSelector)
+	if err != nil {
+		return err
+	}
+
+	pods, err := svc.kubeClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: podlabelSelector.String(),
+	})
+	if err != nil {
+		svc.logger.Warnf("Unable to list pause replicaset[%s/%s] for backup", replicaSet.Namespace, replicaSet.Name)
+		return fmt.Errorf("unable to list pause replicaset[%s/%s] for backup", replicaSet.Namespace, replicaSet.Name)
+	}
+	if len(pods.Items) < 1 {
+		return fmt.Errorf("replicaset[%s/%s] pods is still not available for backup", replicaSet.Namespace, replicaSet.Name)
+	}
 	// pick one pod
 	pod := pods.Items[0]
 	nodeName := pod.Spec.NodeName
@@ -295,10 +325,11 @@ func (svc *service) backupVolumeFromPauseReplicaSet(ctx context.Context,
 		}
 	}
 
-	return svc.backupVolumeFromHostPath(ctx, nodeName, namespace, string(podUID), pvcName)
+	return svc.backupVolumeFromHostPath(ctx, vbc, nodeName, namespace, string(podUID), pvcName)
 }
 
 func (svc *service) backupVolumeFromHostPath(ctx context.Context,
+	vbc *kahuapi.VolumeBackupContent,
 	nodeName string,
 	namespace string,
 	podUID string,
@@ -308,8 +339,9 @@ func (svc *service) backupVolumeFromHostPath(ctx context.Context,
 	if err != nil {
 		return err
 	}
+
 	volumeService, err := svc.serviceProvisioner.Start(ctx, func(pts *corev1.PodTemplateSpec) {
-		pts.Name = svc.backupLocation.Name + "-" + uuid.New().String()
+		pts.Name = "backup-" + pvcName
 		pts.Namespace = svc.deployNamespace
 		pts.Spec.NodeName = nodeName
 
@@ -330,7 +362,7 @@ func (svc *service) backupVolumeFromHostPath(ctx context.Context,
 			}
 			pts.Spec.Containers[i].VolumeMounts = append(pts.Spec.Containers[i].VolumeMounts, corev1.VolumeMount{
 				Name:      pvcName,
-				MountPath: "/source",
+				MountPath: DefaultBackupVolumePath,
 			})
 		}
 	})
@@ -339,54 +371,71 @@ func (svc *service) backupVolumeFromHostPath(ctx context.Context,
 	}
 	defer volumeService.close()
 
-	// err = wait.ExponentialBackoffWithContext(ctx, backupBackoff, func() (done bool, err error) {
-	// 	backupReq, err := svc.constructBackupRequest(vbc)
-	// 	if err != nil {
-	// 		return false, err
-	// 	}
+	err = wait.ExponentialBackoffWithContext(ctx, backupBackoff, func() (done bool, err error) {
+		backupReq, err := svc.constructBackupRequest(vbc)
+		if err != nil {
+			svc.logger.Errorf("Failed to construct backup request. %s", err)
+			return false, nil
+		}
 
-	// 	backupClient, err := volumeService.Backup(ctx, backupReq)
-	// 	if err != nil {
-	// 		return false, err
-	// 	}
+		svc.logger.Infof("backup request. %+v", backupReq)
 
-	// 	completed := false
-	// 	for {
-	// 		backupRes, err := backupClient.Recv()
-	// 		if err == io.EOF {
-	// 			svc.logger.Info("Volume backup[%s] completed ....", vbc.Name)
-	// 			break
-	// 		}
-	// 		if err != nil {
-	// 			svc.logger.Errorf("Unable to do Volume backup[%s]. %s", vbc.Name, err)
-	// 			return false, err
-	// 		}
+		vbc, err = svc.updateVBCPhase(vbc, kahuapi.VolumeBackupContentPhaseInProgress)
+		if err != nil {
+			svc.logger.Errorf("Failed to update volume backup progress. %s", err)
+			return false, nil
+		}
 
-	// 		if vbc.Name != backupRes.Name {
-	// 			svc.logger.Warningf("Out of context response for Volume backup[%s]", vbc.Name)
-	// 			continue
-	// 		}
+		backupClient, err := volumeService.Backup(ctx, backupReq)
+		if err != nil {
+			svc.logger.Errorf("Failed to start backup. %s", err)
+			return false, nil
+		}
 
-	// 		if event := backupRes.GetEvent(); event != nil {
-	// 			svc.processEvent(vbc, event)
-	// 		}
+		completed := false
+		for {
+			backupRes, err := backupClient.Recv()
+			if err == io.EOF {
+				svc.logger.Info("Volume backup[%s] completed ....", vbc.Name)
+				break
+			}
+			if err != nil {
+				svc.logger.Errorf("Unable to do Volume backup[%s]. %s", vbc.Name, err)
+				return false, err
+			}
 
-	// 		if state := backupRes.GetState(); state != nil {
-	// 			vbc, completed, err = svc.updateVBCState(vbc, state)
-	// 			if err != nil {
-	// 				return false, err
-	// 			}
-	// 			if completed {
-	// 				return true, nil
-	// 			}
-	// 		}
-	// 	}
+			if vbc.Name != backupRes.Name {
+				svc.logger.Warningf("Out of context response for Volume backup[%s]", vbc.Name)
+				continue
+			}
 
-	// 	return false, fmt.Errorf("retry volume backup for vbc[%s] again", vbc.Name)
-	// })
+			if event := backupRes.GetEvent(); event != nil {
+				svc.processEvent(vbc, event)
+			}
+
+			if state := backupRes.GetState(); state != nil {
+				vbc, completed, err = svc.updateVBCState(vbc, state)
+				if err != nil {
+					svc.logger.Errorf("Unable to update VBC state. %s", err)
+				}
+				if completed {
+					return true, nil
+				}
+			}
+		}
+
+		if completed {
+			vbc, err = svc.updateVBCPhase(vbc, kahuapi.VolumeBackupContentPhaseCompleted)
+			if err != nil {
+				svc.logger.Errorf("Failed to update volume backup completed. %s", err)
+				return false, nil
+			}
+		}
+
+		return completed, nil
+	})
 
 	return err
-
 }
 
 func (svc *service) ensurePausePodsForPVCs(ctx context.Context,
@@ -468,31 +517,42 @@ func (svc *service) pvcFromSnapshot(ctx context.Context, vbc *kahuapi.VolumeBack
 	for _, volRef := range vbc.Spec.VolumeRef {
 		// currently only handle for CSI
 		csiSnapshot := volRef.CSISnapshot
+		if volRef.RestoreSize == nil {
+			return nil, fmt.Errorf("Restore size empty")
+		}
 		if csiSnapshot != nil {
-			snapshotName := csiSnapshot.SnapshotRef.Name
-			snapshotNamespace := csiSnapshot.SnapshotRef.Namespace
-
+			csiSnapshotName := csiSnapshot.SnapshotRef.Name
+			pvcName := "pvc-" + csiSnapshotName
+			pvcNamespace := csiSnapshot.SnapshotRef.Namespace
 			pvcTemplate := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      snapshotName,
-					Namespace: snapshotNamespace,
+					Name:      pvcName,
+					Namespace: pvcNamespace,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: k8sresource.VBCGVK.GroupVersion().String(),
+							Kind:       k8sresource.VBCGVK.Kind,
+							Name:       vbc.Name,
+							UID:        vbc.UID,
+						},
+					},
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					DataSourceRef: &corev1.TypedLocalObjectReference{
 						Kind:     k8sresource.CSIVolumeSnapshotGVK.Kind,
 						APIGroup: &csiVolSnapshotGroup,
-						Name:     snapshotName,
+						Name:     csiSnapshotName,
 					},
 					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("10Gi"),
+							corev1.ResourceStorage: *resource.NewQuantity(*volRef.RestoreSize, resource.BinarySI),
 						},
 					},
 				},
 			}
-			pvc, err := svc.kubeClient.CoreV1().
-				PersistentVolumeClaims(snapshotNamespace).
+
+			pvc, err := svc.kubeClient.CoreV1().PersistentVolumeClaims(pvcNamespace).
 				Create(ctx, pvcTemplate, metav1.CreateOptions{})
 			if err != nil && !apierrors.IsAlreadyExists(err) {
 				return nil, err
@@ -500,7 +560,7 @@ func (svc *service) pvcFromSnapshot(ctx context.Context, vbc *kahuapi.VolumeBack
 
 			if apierrors.IsAlreadyExists(err) {
 				pvc, err = svc.kubeClient.CoreV1().
-					PersistentVolumeClaims(snapshotNamespace).Get(ctx, pvcTemplate.Name, metav1.GetOptions{})
+					PersistentVolumeClaims(pvcNamespace).Get(ctx, pvcName, metav1.GetOptions{})
 				if err != nil {
 					return nil, err
 				}
@@ -565,6 +625,25 @@ update:
 	}
 
 	return vbc, true, nil
+}
+
+func (svc *service) updateVBCPhase(vbc *kahuapi.VolumeBackupContent,
+	phase kahuapi.VolumeBackupContentPhase) (*kahuapi.VolumeBackupContent, error) {
+	var err error
+update:
+	vbc.Status.Phase = phase
+	vbc, err = svc.kahuClient.VolumeBackupContents().UpdateStatus(context.TODO(), vbc, metav1.UpdateOptions{})
+	if err != nil && apierrors.IsConflict(err) {
+		vbc, err = svc.kahuClient.VolumeBackupContents().Get(context.TODO(), vbc.Name, metav1.GetOptions{})
+		if err != nil {
+			goto update
+		}
+	}
+	if err != nil {
+		return vbc, err
+	}
+
+	return vbc, nil
 }
 
 func (svc *service) DeleteBackup(ctx context.Context, vbc *kahuapi.VolumeBackupContent) error {

@@ -1,0 +1,29 @@
+{{ if (.Values.volumeBackupProviders).openEbsZfs.enableProvider }}
+apiVersion: kahu.io/v1beta1
+kind: ProviderRegistration
+metadata:
+  name: openebs-zfs-provider
+  namespace: {{ (.Values.global).namespace | default "kahu" }}
+spec:
+  providerName: {{ (.Values.volumeBackupProviders).openEbsZfs.providerName }}
+  providerType: {{ (.Values.volumeBackupProviders).openEbsZfs.providerType }}
+  supportedProvisioner: {{ (.Values.volumeBackupProviders).openEbsZfs.supportedProvisioner }}
+  flags:
+    - VOLUME_BACKUP_NEED_SNAPSHOT
+  version: v1.0.0
+  template:
+    metadata:
+      labels:
+        app: openebs-zfs-provider
+    spec:
+      #serviceAccountName: kahu-openebs-zfs-provider
+      containers:
+        - image: {{ (.Values.volumeBackupProviders).openEbsZfs.providerImage }}
+          {{ if (.Values.image).pullPolicy }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{ else }}
+          imagePullPolicy: IfNotPresent
+          {{ end }}
+          name: openebs-zfs-driver
+          command: ["/usr/local/bin/openebs-zfs"]
+{{ end }}

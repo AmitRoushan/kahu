@@ -86,7 +86,7 @@ func (ctrl *controller) backupSnapshotVolumes(backup *kahuapi.Backup,
 		return backup, nil, nil
 	}
 
-	// create groups based on snapshot and non snapshot volumes
+	// create groups based on snapshot provisioners
 	snapshotGroups, err := ctrl.volumeHandler.Group().BySnapshot(snapshots, group.WithProvisioner())
 	if err != nil {
 		return backup, nil, err
@@ -99,8 +99,11 @@ func (ctrl *controller) backupSnapshotVolumes(backup *kahuapi.Backup,
 		if err != nil {
 			return backup, volumes, err
 		}
+		if blName == "" {
+			return backup, volumes, errors.Errorf("not able to decide backup location for %s", snapshotGroup.GetProvisionerName())
+		}
 
-		vbc, err := ctrl.volumeHandler.Backup().BySnapshots(backup.Name, snapshotGroup, blName)
+		vbc, err := ctrl.volumeHandler.Backup().BySnapshots(backup, snapshotGroup, blName)
 		if err != nil {
 			return backup, volumes, err
 		}

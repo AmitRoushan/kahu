@@ -1,0 +1,29 @@
+{{ if (.Values.volumeBackupProviders).linstorCsi.enableProvider }}
+apiVersion: kahu.io/v1beta1
+kind: ProviderRegistration
+metadata:
+  name: linstor-csi-provider
+  namespace: {{ (.Values.global).namespace | default "kahu" }}
+spec:
+  providerName: {{ (.Values.volumeBackupProviders).linstorCsi.providerName }}
+  providerType: {{ (.Values.volumeBackupProviders).linstorCsi.providerType }}
+  supportedProvisioner: {{ (.Values.volumeBackupProviders).linstorCsi.supportedProvisioner }}
+  flags:
+    - VOLUME_BACKUP_NEED_SNAPSHOT
+  version: v1.0.0
+  template:
+    metadata:
+      labels:
+        app: linstor-csi-provider
+    spec:
+      serviceAccountName: kahu-linstor-csi-provider
+      containers:
+        - image: {{ (.Values.volumeBackupProviders).linstorCsi.providerImage }}
+          {{ if (.Values.image).pullPolicy }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{ else }}
+          imagePullPolicy: IfNotPresent
+          {{ end }}
+          name: linstor-csi-driver
+          command: ["/usr/local/bin/csi-snapshotter"]
+{{ end }}

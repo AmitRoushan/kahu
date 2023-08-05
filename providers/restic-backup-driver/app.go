@@ -162,6 +162,7 @@ func Run(ctx context.Context, config config.Config) error {
 	log.Info("Starting Server ...")
 
 	unixSocketPath := config.GetUnixSocketPath()
+	log.Infof("Getting started with driver socket %s", unixSocketPath)
 	serverAddr, err := net.ResolveUnixAddr("unix", unixSocketPath)
 	if err != nil {
 		log.Fatal("failed to resolve unix addr")
@@ -184,6 +185,7 @@ func Run(ctx context.Context, config config.Config) error {
 			log.Errorf("failed to close listening socket %s", err)
 		}
 	}()
+	log.Infof("Socket[%s] created", unixSocketPath)
 
 	var opts []grpc.ServerOption
 	grpcServer := grpc.NewServer(opts...)
@@ -195,11 +197,13 @@ func Run(ctx context.Context, config config.Config) error {
 
 	provider.RegisterVolumeBackupServer(grpcServer, backupServer)
 	provider.RegisterIdentityServer(grpcServer, NewIdentityServer(ctx, config))
+	log.Info("Volume backup registration success")
 
 	go func(ctx context.Context, server *grpc.Server) {
 		<-ctx.Done()
 		server.Stop()
 	}(ctx, grpcServer)
 
+	log.Info("Birth cry ...")
 	return grpcServer.Serve(lis)
 }

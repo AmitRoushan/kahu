@@ -65,8 +65,8 @@ $(PROTOC_GEN_GO): $(PROTO_DIR)
 	(cd $(PROTO_DIR)/src/$(PROTOBUF_PKG) && \
 		(test "$$(git describe --tags | head -1)" = "$(PROTOBUF_VERSION)" || \
 			(git fetch && git checkout tags/$(PROTOBUF_VERSION))))
-	(cd $(PROTO_DIR)/src/$(PROTOBUF_PKG) && go get -v -d $$(go list -f '{{ .ImportPath }}' ./...)) && \
-	go build -o "$@" $(PROTOC_GEN_GO_PKG)
+	(cd $(PROTO_DIR)/src/$(PROTOBUF_PKG) && go get -v -d $$(go list -f '{{ .ImportPath }}' ./...) && \
+	go build -o "$@" $(PROTOC_GEN_GO_PKG))
 
 build_meta_service_grpc: $(PROTOC) $(PROTOC_GEN_GO)
 	$(MAKE) -C providerframework/metaservice metaservice.pb.go PROTOC=$(PROTOC) PROTOC_GEN_GO=$(PROTOC_GEN_GO)

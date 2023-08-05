@@ -163,7 +163,10 @@ controller-gen: ## Download controller-gen locally if necessary.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+	@echo "Generating CRDs"
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:generateEmbeddedObjectMeta=true webhook paths="./apis/..." output:crd:artifacts:config=config/crd/v1beta1/bases
+	@echo "Coping CRDs for helm"
+	cp config/crd/v1beta1/bases/* deploy/charts/crds 
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))

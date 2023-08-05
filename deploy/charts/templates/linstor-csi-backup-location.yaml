@@ -1,0 +1,10 @@
+{{ if (.Values.volumeBackupProviders).linstorCsi.enableProvider }}
+apiVersion: kahu.io/v1beta1
+kind: BackupLocation
+metadata:
+  name: linstor-csi-backuplocation
+  annotations:
+    kahu.io/defaultBackupLocation: "true"
+spec:
+  providerName: {{ (.Values.volumeBackupProviders).linstorCsi.providerName }}
+{{ end }}

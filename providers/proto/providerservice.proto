@@ -168,6 +168,7 @@ service MetaBackup {
 message BackupIdentifier {
   string pv_name = 1;
   BackupIdentity backup_identity = 2;
+  int32 progress = 3; 
 }
 
 message BackupIdentity {
@@ -209,7 +210,10 @@ message StartBackupRequest {
   repeated VolBackup backupInfo = 3;
 
   // optional
-  map<string, string> parameters = 9;
+  string location = 4;
+
+  // optional
+  map<string, string> parameters = 9; 
 }
 
 message StartBackupResponse {
@@ -326,7 +330,7 @@ message CancelRestoreResponse {
 service VolumeBackup {
   // Create backup of the provided volumes
   rpc StartBackup(StartBackupRequest)
-      returns (StartBackupResponse) {}
+      returns (stream StartBackupResponse) {}
 
   // Delete given backup
   rpc DeleteBackup(DeleteBackupRequest)

@@ -72,6 +72,7 @@ state towards the desired state`,
 			setupSignalHandler(cancel)
 
 			// connect with driver and get provider info
+			log.Infof("Ensuring grpc connection endpoint[%s]", completeConfig.DriverEndpoint)
 			grpcConn, err := utils.GetGRPCConnection(completeConfig.DriverEndpoint)
 			if err != nil {
 				log.Fatalf("Failed to connect to volume backup driver. %s", err)
@@ -79,11 +80,13 @@ state towards the desired state`,
 			}
 			defer grpcConn.Close()
 
+			log.Infof("Ensuring volume backup driver rediness with endpoint[%s]", completeConfig.DriverEndpoint)
 			err = ensureDriver(ctx, completeConfig, grpcConn)
 			if err != nil {
 				log.Errorf("unable to configure volume driver. %s", err)
 				return
 			}
+			log.Info("Volume backup driver available")
 
 			if err := Run(ctx, completeConfig, grpcConn); err != nil {
 				log.Fatalf("Controller manager exited. %s", err)
@@ -118,6 +121,7 @@ func getConfig(optManager options.OptionManager) *config.CompletedConfig {
 
 func ensureDriver(ctx context.Context,
 	completeConfig *config.CompletedConfig, grpcConn grpc.ClientConnInterface) error {
+	log.Info("Probing volume provider endpoint")
 	// probe driver till get ready
 	err := utils.Probe(grpcConn, defaultProbeTimeout)
 	if err != nil {
@@ -197,22 +201,25 @@ func Run(ctx context.Context, config *config.CompletedConfig, grpcConn *grpc.Cli
 	log.Info("Volume service started with configuration")
 	config.Print()
 
-	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d",
-		config.Address, config.Port))
+	address := fmt.Sprintf("%s:%d", config.Address, config.Port)
+	lis, err := net.Listen("tcp", address)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
+	log.Infof("Socket[%s] creation success", address)
 
 	var opts []grpc.ServerOption
 	grpcServer := grpc.NewServer(opts...)
 	volumeservice.RegisterVolumeServiceServer(grpcServer, server.NewServer(config,
 		providerSvc.NewVolumeBackupClient(grpcConn),
 		providerSvc.NewIdentityClient(grpcConn)))
+	log.Info("Volume service registration success")
 
 	go func(ctx context.Context, server *grpc.Server) {
 		server.Serve(lis)
 	}(ctx, grpcServer)
 
+	log.Info("Birth cry...")
 	<-ctx.Done()
 
 	return cleanup(grpcServer, grpcConn)

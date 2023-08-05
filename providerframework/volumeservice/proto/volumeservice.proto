@@ -60,6 +60,9 @@ message BackupRequest {
 
   // optional
   map <string, string> parameters = 9;
+
+  // optional
+  string location = 3;
 }
 
 message BackupProgress {

@@ -77,6 +77,9 @@ type VolumeSnapshotState struct {
 type VolumeSnapshotSource struct {
 	CSISnapshot *CSISnapshotData `json:"csiSnapshot,omitempty"`
 
+	// restoreSize represents the complete size of the snapshot in bytes.
+	RestoreSize *int64 `json:"restoreSize,omitempty"`
+
 	Snapshot *SnapshotData `json:"snapshot,omitempty"`
 }
 

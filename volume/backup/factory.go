@@ -39,13 +39,14 @@ import (
 
 type Factory interface {
 	ByPVC(backupName string, vg group.Interface, location string) (*kahuapi.VolumeBackupContent, error)
-	BySnapshots(backupName string, snapshots group.Interface, location string) (*kahuapi.VolumeBackupContent, error)
+	BySnapshots(backup *kahuapi.Backup, snapshots group.Interface, location string) (*kahuapi.VolumeBackupContent, error)
 	Delete(vbcName string, location string) error
 }
 
 const (
 	labelBackupName           = "kahu.io/backup-name"
-	labelVolumeBackupLocation = "kahu.io/backup-backup-location"
+	labelVolumeBackupLocation = "kahu.io/backup-location"
+	labelGroupName            = "kahu.io/volume-group"
 )
 
 type factory struct {
@@ -85,11 +86,12 @@ func getVBCName() string {
 	return fmt.Sprintf("vbc-%s", uuid.New().String())
 }
 
-func vbcLabels(backupName, location string) *metav1.LabelSelector {
+func vbcLabels(backupName, location, groupName string) *metav1.LabelSelector {
 	return &metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			labelBackupName:           backupName,
 			labelVolumeBackupLocation: location,
+			labelGroupName:            groupName,
 		},
 	}
 }
@@ -105,10 +107,10 @@ func (f *factory) ByPVC(backupName string,
 	return vbc, f.backup(vbc, location)
 }
 
-func (f *factory) BySnapshots(backupName string,
+func (f *factory) BySnapshots(backup *kahuapi.Backup,
 	vg group.Interface,
 	location string) (*kahuapi.VolumeBackupContent, error) {
-	vbc, err := f.ensureVBCBySnapshots(backupName, vg, location)
+	vbc, err := f.ensureVBCBySnapshots(backup, vg, location)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +163,7 @@ func (f *factory) ensureVBCByVolumes(backupName string,
 	vg group.Interface,
 	location string) (*kahuapi.VolumeBackupContent, error) {
 	f.logger.Infof("Ensuring volume backup content for %s/%s", vg.GetGroupName())
-	labels := vbcLabels(backupName, location)
+	labels := vbcLabels(backupName, location, vg.GetGroupName())
 	provisionerName := vg.GetProvisionerName()
 	selector, err := metav1.LabelSelectorAsSelector(labels)
 	if err != nil {
@@ -222,12 +224,12 @@ func (f *factory) ensureVBCByVolumes(backupName string,
 		UpdateStatus(context.TODO(), vbc, metav1.UpdateOptions{})
 }
 
-func (f *factory) ensureVBCBySnapshots(backupName string,
-	vg group.Interface,
+func (f *factory) ensureVBCBySnapshots(backup *kahuapi.Backup,
+	snapshotGroup group.Interface,
 	location string) (*kahuapi.VolumeBackupContent, error) {
-	f.logger.Infof("Ensuring volume backup content for %s", vg.GetProvisionerName())
-	labels := vbcLabels(backupName, location)
-	provisionerName := vg.GetProvisionerName()
+	f.logger.Infof("Ensuring volume backup content for %s", snapshotGroup.GetProvisionerName())
+	provisionerName := snapshotGroup.GetProvisionerName()
+	labels := vbcLabels(backup.Name, location, snapshotGroup.GetGroupName())
 	selector, err := metav1.LabelSelectorAsSelector(labels)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("invalid label selector %s", labels.String()))
@@ -246,7 +248,7 @@ func (f *factory) ensureVBCBySnapshots(backupName string,
 	}
 
 	// populate volume backup references
-	backupSourceRef, err := f.collectVolumeReferenceFromSnapshot(vg)
+	backupSourceRef, err := f.collectVolumeReferenceFromSnapshot(snapshotGroup)
 	if err != nil {
 		return nil, err
 	}
@@ -255,9 +257,17 @@ func (f *factory) ensureVBCBySnapshots(backupName string,
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels.MatchLabels,
 			Name:   getVBCName(),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: k8sresource.BackupGVK.GroupVersion().String(),
+					Kind:       k8sresource.BackupGVK.Kind,
+					Name:       backup.Name,
+					UID:        backup.UID,
+				},
+			},
 		},
 		Spec: kahuapi.VolumeBackupContentSpec{
-			BackupName:     backupName,
+			BackupName:     backup.Name,
 			VolumeProvider: &provisionerName,
 			Parameters:     make(map[string]string),
 			BackupSource: kahuapi.BackupSource{
@@ -271,7 +281,7 @@ func (f *factory) ensureVBCBySnapshots(backupName string,
 		Create(context.TODO(), volumeBackupContent, metav1.CreateOptions{})
 	if err != nil {
 		f.logger.Errorf("unable to create volume backup content "+
-			"for provider %s", vg.GetGroupName())
+			"for provider %s", snapshotGroup.GetGroupName())
 		return nil, errors.Wrap(err, "unable to create volume backup content")
 	}
 
@@ -311,6 +321,11 @@ func (f *factory) collectVolumeReferenceFromSnapshot(vg group.Interface) ([]kahu
 			if state.Snapshot != nil {
 				ref.Snapshot = state.Snapshot
 			}
+
+			if state.RestoreSize != nil {
+				ref.RestoreSize = state.RestoreSize
+			}
+
 			volRefs = append(volRefs, ref)
 		}
 	}

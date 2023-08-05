@@ -19,12 +19,14 @@ import (
 	"errors"
 
 	"github.com/spf13/pflag"
+
+	"github.com/soda-cdm/kahu/providerframework/volumeservice/app/options"
 )
 
 const (
 	// ResticService component name
-	unixSocketPath         = "/tmp/volumeservice.sock"
-	defaultProviderName    = "restic.backup.openebs.io"
+	unixSocketPath         = options.DefaultVolumeBackupDriverEndpoint
+	defaultProviderName    = "restic.volume.backup.kahu.io"
 	defaultProviderVersion = "v0.1.0"
 )
 

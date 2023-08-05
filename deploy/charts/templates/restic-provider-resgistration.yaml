@@ -1,0 +1,31 @@
+{{ if (.Values.volumeBackupProviders).restic.enableProvider }}
+apiVersion: kahu.io/v1beta1
+kind: ProviderRegistration
+metadata:
+  name: restic-provider-reg
+spec:
+  version: v0.1.0
+  providerName: {{ (.Values.volumeBackupProviders).restic.providerName }}
+  providerType: {{ (.Values.volumeBackupProviders).restic.providerType }}
+  supportedProvisioner: {{ (.Values.volumeBackupProviders).restic.supportedProvisioner }}
+  flags:
+  - VOLUME_BACKUP_NEED_SNAPSHOT
+  - VOLUME_BACKUP_NEED_VOLUME
+  parameters:
+    provider: test
+    version: v4.2
+  template:
+    metadata:
+      labels:
+        app: nfs-provider
+    spec:
+      containers:
+        - image: {{ (.Values.volumeBackupProviders).restic.providerImage }}
+          {{ if (.Values.image).pullPolicy }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{ else }}
+          imagePullPolicy: IfNotPresent
+          {{ end }}
+          name: restic-driver
+          command: ["restic-backup-driver"]
+{{ end }}

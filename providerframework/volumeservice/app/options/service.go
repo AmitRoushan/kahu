@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	defaultVolumeBackupDriverEndpoint = "/tmp/volumeservice.sock"
+	DefaultVolumeBackupDriverEndpoint = "/tmp/volumeservice.sock"
 	defaultPort                       = 443
 	defaultAddress                    = "0.0.0.0"
 )
@@ -40,7 +40,7 @@ type serviceOptions struct {
 
 func NewServiceOptions() *serviceOptions {
 	return &serviceOptions{
-		DriverEndpoint: defaultVolumeBackupDriverEndpoint,
+		DriverEndpoint: DefaultVolumeBackupDriverEndpoint,
 		Port:           defaultPort,
 		Address:        defaultAddress,
 	}

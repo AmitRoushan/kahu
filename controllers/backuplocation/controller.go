@@ -195,14 +195,12 @@ func (ctrl *controller) processQueue(key string) error {
 
 	// check provider
 	ctrl.logger.Infof("Checking provider [%s]", getProviderName(backupLocation))
-	provider, err := ctrl.kahuClient.KahuV1beta1().
-		Providers().
+	provider, err := ctrl.kahuClient.KahuV1beta1().Providers().
 		Get(context.TODO(), getProviderName(backupLocation), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		ctrl.logger.Errorf("Provider[%s] not available for backup location[%s]")
 		backupLocation.Status.Active = false
-		backupLocation, err = ctrl.kahuClient.KahuV1beta1().
-			BackupLocations().
+		_, err = ctrl.kahuClient.KahuV1beta1().BackupLocations().
 			UpdateStatus(ctrl.ctx, backupLocation, metav1.UpdateOptions{})
 		return err
 	} else if err != nil {
@@ -211,11 +209,16 @@ func (ctrl *controller) processQueue(key string) error {
 
 	ctrl.logger.Infof("Try to install backup location [%s]", backupLocation.Name)
 	err = ctrl.framework.Executors().Install(ctrl.ctx, backupLocation.Name)
-	if err == nil {
-		backupLocation.Status.Active = true
-		_, err = ctrl.kahuClient.KahuV1beta1().
-			BackupLocations().
-			UpdateStatus(ctrl.ctx, backupLocation, metav1.UpdateOptions{})
+	if err != nil {
+		ctrl.logger.Errorf("Backup location[%s] failed to install", backupLocation.Name)
+		return err
+	}
+
+	backupLocation.Status.Active = true
+	backupLocation, err = ctrl.kahuClient.KahuV1beta1().BackupLocations().
+		UpdateStatus(ctrl.ctx, backupLocation, metav1.UpdateOptions{})
+	if err != nil {
+		ctrl.logger.Infof("Backup location[%s] failed to update active", backupLocation.Name)
 		return err
 	}
 

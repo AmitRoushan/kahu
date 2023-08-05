@@ -17,7 +17,6 @@ limitations under the License.
 package volumebackup
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -56,7 +55,7 @@ func (collection *StoreCollection) Add(location string, svc Service) error {
 	defer collection.Unlock()
 	service, ok := collection.store[location]
 	if ok && service != nil {
-		return fmt.Errorf("service already available for %s", location)
+		return nil
 	}
 	collection.store[location] = svc
 	return nil

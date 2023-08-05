@@ -21,8 +21,8 @@ import (
 	"strings"
 )
 
-// BackupCommand returns a Command for running a restic backup.
-func BackupCommand(repoIdentifier, passwordFile, path string, tags map[string]string) *Command {
+// backupCommand returns a Command for running a restic backup.
+func backupCommand(repoIdentifier, passwordFile, path string, tags map[string]string) *Command {
 	// --host flag is provided with a generic value because restic uses the host
 	// to find a parent snapshot, and by default it will be the name of the daemonset pod
 	// where the `restic backup` command is run. If this pod is recreated, we want to continue
@@ -58,13 +58,13 @@ func RestoreCommand(repoIdentifier, passwordFile, snapshotID, target string) *Co
 	}
 }
 
-// GetSnapshotCommand returns a Command for running a restic (get) snapshots.
-func GetSnapshotCommand(repoIdentifier, passwordFile string, tags map[string]string) *Command {
+// getSnapshotCommand returns a Command for running a restic (get) snapshots.
+func getSnapshotCommand(repoIdentifier, passwordFile string, tags map[string]string) *Command {
 	return &Command{
 		Command:        "snapshots",
 		RepoIdentifier: repoIdentifier,
 		PasswordFile:   passwordFile,
-		ExtraFlags:     []string{"--json", "--last", getSnapshotTagFlag(tags)},
+		ExtraFlags:     []string{"--json", "--latest=1", getSnapshotTagFlag(tags)},
 	}
 }
 
@@ -77,39 +77,19 @@ func getSnapshotTagFlag(tags map[string]string) string {
 	return fmt.Sprintf("--tag=%s", strings.Join(tagFilters, ","))
 }
 
-func InitCommand(repoIdentifier string) *Command {
+func initCommand(repoIdentifier, passwordFile string) *Command {
 	return &Command{
 		Command:        "init",
 		RepoIdentifier: repoIdentifier,
+		PasswordFile:   passwordFile,
 	}
 }
 
-func SnapshotsCommand(repoIdentifier string) *Command {
+func snapshotsCommand(repoIdentifier string, passwordFile string) *Command {
 	return &Command{
 		Command:        "snapshots",
 		RepoIdentifier: repoIdentifier,
-	}
-}
-
-func PruneCommand(repoIdentifier string) *Command {
-	return &Command{
-		Command:        "prune",
-		RepoIdentifier: repoIdentifier,
-	}
-}
-
-func ForgetCommand(repoIdentifier, snapshotID string) *Command {
-	return &Command{
-		Command:        "forget",
-		RepoIdentifier: repoIdentifier,
-		Args:           []string{snapshotID},
-	}
-}
-
-func UnlockCommand(repoIdentifier string) *Command {
-	return &Command{
-		Command:        "unlock",
-		RepoIdentifier: repoIdentifier,
+		PasswordFile:   passwordFile,
 	}
 }
 

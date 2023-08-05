@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ (.Values.metadataProviders).nfs.pvcName }}
+spec:
+  capacity:
+    storage: {{ required "Must provide the capacity." .Values.metadataProviders.nfs.capacity }}
+  accessModes:
+    - ReadWriteMany
+  nfs:
+    # replace NFS_SERVER_IP with NFS Server service IP and path with export path
+    server: {{ required "Must provide the NFS server IP." .Values.metadataProviders.nfs.server }}
+    path: {{ required "Must provide NFS server export path." .Values.metadataProviders.nfs.exportPath }}
+  mountOptions:
+    - nfsvers={{ required "Must provide NFS server version." .Values.metadataProviders.nfs.version }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ (.Values.metadataProviders).nfs.pvcName }}
+  namespace: {{ (.Values.global).namespace | default "kahu" }}
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: {{ required "Must provide the capacity." .Values.metadataProviders.nfs.capacity }}
+  volumeName: nfs

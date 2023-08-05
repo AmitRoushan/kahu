@@ -124,7 +124,7 @@ func GetGRPCConnection(endpoint string, dialOptions ...grpc.DialOption) (*grpc.C
 		return nil, fmt.Errorf("invalid unix domain path [%s]",
 			endpoint)
 	}
-	log.Info("Probing volume provider endpoint")
+
 	return grpc.Dial(endpoint, dialOptions...)
 }
 

@@ -1,0 +1,54 @@
+# Default values for kahu.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# all global values across charts go here
+global:
+  # the number of replicas of the pod.
+  replicaCount: 1
+  # the namespace for deployment of kahu components
+  namespace: kahu
+image:
+  pullPolicy: IfNotPresent
+  # backup service image
+  backupImage : docker.io/sodacdm/kahu-controller-manager:v0.1.0
+  # metadata service image, include metadata-service and nfs-provider
+  metadataServiceImage : docker.io/sodacdm/kahu-meta-service:v0.1.0
+  nfsProviderImage : docker.io/sodacdm/kahu-nfs-provider:v0.1.0
+  # volume service image
+  volumeBackupServiceImage : docker.io/sodacdm/kahu-volume-service:v0.1.0
+
+metadataProviders:
+  nfs:
+    providerName: nfs-provider.meta.backup.kahu.io
+    providerImage : docker.io/sodacdm/kahu-nfs-provider:v0.1.0
+    # Mount path inside nfs provider
+    mountPath: /data
+    # nfs version, 3, 3.0, 4.0 and 4.1 are supported, and 4.1 suggested
+    version: 4.2
+    # Change to the volume capacity, e.g. 100Gi
+    capacity: 2Gi
+    pvcName: nfs
+    server: 10.96.145.8
+    exportPath: /
+
+volumeBackupProviders:
+  openEbsZfs:
+    enableProvider: false
+    providerName: "zfs.backup.openebs.io"
+    providerType: "VolumeBackup"
+    supportedProvisioner: zfs.csi.openebs.io
+    providerImage : docker.io/sodacdm/kahu-openebs-zfs:v0.1.0
+  linstorCsi:
+    enableProvider: false
+    providerName: "snapshotter.backup.csi.io"
+    providerType: "VolumeBackup"
+    supportedProvisioner: linstor.csi.linbit.com
+    providerImage : docker.io/sodacdm/kahu-csi-snapshotter:v0.1.0
+  restic:
+    enableProvider: true
+    defaultLocation: true
+    providerName: "restic.volume.backup.kahu.io"
+    providerType: "VolumeBackup"
+    supportedProvisioner: all
+    providerImage : docker.io/sodacdm/kahu-restic-backup-driver:v0.1.0

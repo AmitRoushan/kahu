@@ -323,6 +323,11 @@ func (in *BackupVolumeReference) DeepCopyInto(out *BackupVolumeReference) {
 		*out = new(CSISnapshotData)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.RestoreSize != nil {
+		in, out := &in.RestoreSize, &out.RestoreSize
+		*out = new(int64)
+		**out = **in
+	}
 	if in.Snapshot != nil {
 		in, out := &in.Snapshot, &out.Snapshot
 		*out = new(SnapshotData)
@@ -1609,6 +1614,11 @@ func (in *VolumeSnapshotSource) DeepCopyInto(out *VolumeSnapshotSource) {
 		in, out := &in.CSISnapshot, &out.CSISnapshot
 		*out = new(CSISnapshotData)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.RestoreSize != nil {
+		in, out := &in.RestoreSize, &out.RestoreSize
+		*out = new(int64)
+		**out = **in
 	}
 	if in.Snapshot != nil {
 		in, out := &in.Snapshot, &out.Snapshot

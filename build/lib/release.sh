@@ -38,7 +38,7 @@ build::get_docker_wrapped_binaries() {
     controller-manager
     meta-service
     volume-service
-    #openebs-zfs
+    openebs-zfs
     nfs-provider
     restic-backup-driver
   )

@@ -19,6 +19,7 @@ package backup
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -28,9 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 
@@ -47,7 +46,7 @@ import (
 const (
 	controllerName        = "volume-content-backup"
 	volumeBackupFinalizer = "kahu.io/volume-backup-protection"
-	defaultContextTimeout = 30 * time.Second
+	defaultContextTimeout = 30 * time.Minute
 	defaultPollTime       = 5 * time.Second
 
 	EventVolumeBackupFailed       = "VolumeBackupFailed"
@@ -95,6 +94,63 @@ func (ctrl *VolumeBackupService) getVolumeBackup(ctx context.Context,
 	return ctrl.kahuClient.KahuV1beta1().VolumeBackupContents().Get(ctx, name, metav1.GetOptions{})
 }
 
+// func (ctrl *VolumeBackupService) Backupold(ctx context.Context,
+// 	req *volumeservice.BackupRequest,
+// 	stream volumeservice.VolumeService_BackupServer) error {
+// 	backupContentName := req.GetBackupContentName()
+// 	logger := ctrl.logger.WithField("backup", req.GetBackupContentName())
+
+// 	// check and lock backup handling
+// 	if ctrl.manager.Exist(backupContentName) {
+// 		return status.Errorf(codes.OutOfRange, "Volume backup[%s] already in progress", backupContentName)
+// 	}
+// 	ctrl.manager.Add(backupContentName)
+// 	defer ctrl.manager.Delete(backupContentName)
+
+// 	backupProgress, err := ctrl.handleBackupStart(ctx, req, stream)
+// 	if err != nil {
+// 		if utils.CheckServerUnavailable(err) {
+// 			logger.Errorf("Driver unavailable: Continue to retry for volume backup for %s", backupContentName)
+// 			return status.Errorf(codes.FailedPrecondition,
+// 				"Driver unavailable: Continue to retry for volume backup for %s", backupContentName)
+// 		}
+// 		return err
+// 	}
+
+// 	ctrl.sendBackupEvent(backupContentName, stream,
+// 		v1.EventTypeNormal,
+// 		EventVolumeBackupStarted,
+// 		"Started volume backup")
+
+// 	ctrl.sendBackupState(req.GetBackupContentName(), stream, backupProgress)
+
+// 	var t clock.Timer
+// 	backoff := wait.NewJitteredBackoffManager(defaultPollTime, 0.0, &clock.RealClock{})
+// 	for {
+// 		select {
+// 		case <-stream.Context().Done():
+// 			ctrl.logger.Info("Context completed")
+// 			return nil
+// 		default:
+// 		}
+
+// 		// check backup progress
+// 		err := ctrl.processBackupProgress(req, stream, backupProgress)
+// 		if err != nil {
+// 			return err
+// 		}
+
+// 		//reset timer
+// 		t = backoff.Backoff()
+// 		select {
+// 		case <-stream.Context().Done():
+// 			ctrl.logger.Info("Context completed")
+// 			return nil
+// 		case <-t.C():
+// 		}
+// 	}
+// }
+
 func (ctrl *VolumeBackupService) Backup(ctx context.Context,
 	req *volumeservice.BackupRequest,
 	stream volumeservice.VolumeService_BackupServer) error {
@@ -108,25 +164,26 @@ func (ctrl *VolumeBackupService) Backup(ctx context.Context,
 	ctrl.manager.Add(backupContentName)
 	defer ctrl.manager.Delete(backupContentName)
 
-	backupProgress, err := ctrl.handleBackupStart(ctx, req, stream)
+	backupReq, volNames, err := ctrl.constructBackupRequest(req)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, defaultContextTimeout)
+	defer cancel()
+	respStream, err := ctrl.driver.StartBackup(ctx, backupReq)
 	if err != nil {
 		if utils.CheckServerUnavailable(err) {
 			logger.Errorf("Driver unavailable: Continue to retry for volume backup for %s", backupContentName)
 			return status.Errorf(codes.FailedPrecondition,
 				"Driver unavailable: Continue to retry for volume backup for %s", backupContentName)
 		}
+		ctrl.logger.Errorf("Unable to start backup. %s", err)
 		return err
 	}
 
-	ctrl.sendBackupEvent(backupContentName, stream,
-		v1.EventTypeNormal,
-		EventVolumeBackupStarted,
-		"Started volume backup")
+	ctrl.sendBackupEvent(backupContentName, stream, v1.EventTypeNormal, EventVolumeBackupStarted, "Started volume backup")
 
-	ctrl.sendBackupState(req.GetBackupContentName(), stream, backupProgress)
-
-	var t clock.Timer
-	backoff := wait.NewJitteredBackoffManager(defaultPollTime, 0.0, &clock.RealClock{})
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -135,20 +192,35 @@ func (ctrl *VolumeBackupService) Backup(ctx context.Context,
 		default:
 		}
 
-		// check backup progress
-		err := ctrl.processBackupProgress(req, stream, backupProgress)
+		// receive backup progress update
+		response, err := respStream.Recv()
+		if err == io.EOF {
+			ctrl.sendBackupEvent(backupContentName, stream, v1.EventTypeNormal, EventVolumeBackupStarted, "Volume backup completed")
+			ctrl.logger.Info("Volume backup completed for %s", req.BackupContentName)
+			return nil
+		}
 		if err != nil {
-			return err
+			ctrl.sendBackupEvent(backupContentName, stream, v1.EventTypeWarning, EventVolumeBackupStarted, "Volume backup failed")
+			ctrl.logger.Info("Volume backup faailed for %s", req.BackupContentName)
+			return status.Errorf(codes.Aborted, "Volume backup failed for %s. %s", req.BackupContentName, err)
 		}
 
-		//reset timer
-		t = backoff.Backoff()
-		select {
-		case <-stream.Context().Done():
-			ctrl.logger.Info("Context completed")
-			return nil
-		case <-t.C():
+		if err = validateBackupResponse(volNames, response.GetBackupInfo()); err != nil {
+			ctrl.logger.Warningf("Invalid backup response from driver. %s", err)
+			return status.Errorf(codes.Aborted, "Volume backup failed for %s. %s", req.BackupContentName, err)
 		}
+
+		backupProgress := make([]*volumeservice.BackupProgress, 0)
+		for _, backupIdentifier := range response.GetBackupInfo() {
+			backupProgress = append(backupProgress, &volumeservice.BackupProgress{
+				Volume:          backupIdentifier.GetPvName(),
+				BackupHandle:    backupIdentifier.GetBackupIdentity().GetBackupHandle(),
+				BackupAttribute: backupIdentifier.GetBackupIdentity().GetBackupAttributes(),
+				Progress:        backupIdentifier.GetProgress(),
+			})
+		}
+
+		ctrl.sendBackupState(req.GetBackupContentName(), stream, backupProgress)
 	}
 }
 
@@ -371,6 +443,7 @@ func (ctrl *VolumeBackupService) getVolBackupReqByRef(
 				SnapshotHandle:     ref.Snapshot.SnapshotHandle,
 			}
 			volBackupInfo.Snapshot = snapshot
+			volBackupInfo.MountPath = ref.GetMountPath()
 		}
 		volBackupInfos = append(volBackupInfos, volBackupInfo)
 	}
@@ -378,7 +451,8 @@ func (ctrl *VolumeBackupService) getVolBackupReqByRef(
 	return &providerSvc.StartBackupRequest{
 		BackupContentName: req.BackupContentName,
 		BackupInfo:        volBackupInfos,
-		Parameters:        req.Parameters}, volNames, nil
+		Parameters:        req.GetParameters(),
+		Location:          req.GetLocation()}, volNames, nil
 }
 
 //func (ctrl *VolumeBackupService) getVolBackupReqBySnapshot(backupName string,
@@ -534,40 +608,40 @@ func (ctrl *VolumeBackupService) getVolume(
 func (ctrl *VolumeBackupService) handleBackupStart(ctx context.Context,
 	req *volumeservice.BackupRequest,
 	stream volumeservice.VolumeService_BackupServer) ([]*volumeservice.BackupProgress, error) {
-	volNames := sets.NewString()
+	// volNames := sets.NewString()
 
-	backupReq, volNames, err := ctrl.constructBackupRequest(req)
-	if err != nil {
-		return nil, err
-	}
+	// backupReq, volNames, err := ctrl.constructBackupRequest(req)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	ctx, cancel := context.WithTimeout(ctx, defaultContextTimeout)
-	defer cancel()
-	response, err := ctrl.driver.StartBackup(ctx, backupReq)
-	if err != nil {
-		ctrl.logger.Errorf("Unable to start backup. %s", err)
-		return nil, err
-	}
+	// ctx, cancel := context.WithTimeout(ctx, defaultContextTimeout)
+	// defer cancel()
+	// response, err := ctrl.driver.StartBackup(ctx, backupReq)
+	// if err != nil {
+	// 	ctrl.logger.Errorf("Unable to start backup. %s", err)
+	// 	return nil, err
+	// }
 
-	if response != nil && len(response.Errors) > 0 {
-		msg := fmt.Sprintf("Unable to start backup. err: (%s)", strings.Join(response.Errors, " ,"))
-		ctrl.logger.Error(msg)
-		return nil, fmt.Errorf("%s", msg)
-	}
+	// if response != nil && len(response.Errors) > 0 {
+	// 	msg := fmt.Sprintf("Unable to start backup. err: (%s)", strings.Join(response.Errors, " ,"))
+	// 	ctrl.logger.Error(msg)
+	// 	return nil, fmt.Errorf("%s", msg)
+	// }
 
-	if err = validateBackupResponse(volNames, response.GetBackupInfo()); err != nil {
-		ctrl.logger.Warningf("Invalid backup response from driver. %s", err)
-		return nil, err
-	}
+	// if err = validateBackupResponse(volNames, response.GetBackupInfo()); err != nil {
+	// 	ctrl.logger.Warningf("Invalid backup response from driver. %s", err)
+	// 	return nil, err
+	// }
 
 	backupProgress := make([]*volumeservice.BackupProgress, 0)
-	for _, backupIdentifier := range response.GetBackupInfo() {
-		backupProgress = append(backupProgress, &volumeservice.BackupProgress{
-			Volume:          backupIdentifier.GetPvName(),
-			BackupHandle:    backupIdentifier.GetBackupIdentity().GetBackupHandle(),
-			BackupAttribute: backupIdentifier.GetBackupIdentity().GetBackupAttributes(),
-		})
-	}
+	// for _, backupIdentifier := range response.GetBackupInfo() {
+	// 	backupProgress = append(backupProgress, &volumeservice.BackupProgress{
+	// 		Volume:          backupIdentifier.GetPvName(),
+	// 		BackupHandle:    backupIdentifier.GetBackupIdentity().GetBackupHandle(),
+	// 		BackupAttribute: backupIdentifier.GetBackupIdentity().GetBackupAttributes(),
+	// 	})
+	// }
 
 	return backupProgress, nil
 }

@@ -1,0 +1,10 @@
+{{ if (.Values.volumeBackupProviders).openEbsZfs.enableProvider }}
+apiVersion: kahu.io/v1beta1
+kind: BackupLocation
+metadata:
+  name: openebs-zfs-backuplocation
+  annotations:
+    kahu.io/is-default-volume-backup-location: "true"
+spec:
+  providerName: {{ (.Values.volumeBackupProviders).openEbsZfs.providerName }}
+{{ end }}

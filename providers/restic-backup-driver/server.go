@@ -19,10 +19,16 @@ package restic
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"k8s.io/client-go/kubernetes"
 
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	pb "github.com/soda-cdm/kahu/providers/lib/go"
 	"github.com/soda-cdm/kahu/providers/restic-backup-driver/config"
 )
@@ -31,6 +37,7 @@ type volBackupServer struct {
 	ctx        context.Context
 	config     config.Config
 	kubeClient kubernetes.Interface
+	logger     log.FieldLogger
 }
 
 // NewVolumeBackupServer creates a new volume backup service
@@ -40,6 +47,7 @@ func NewVolumeBackupServer(ctx context.Context,
 		ctx:        ctx,
 		config:     config,
 		kubeClient: config.GetKubeClient(),
+		logger:     log.WithField("module", "restic-driver"),
 	}, nil
 }
 
@@ -89,21 +97,119 @@ func (server *volBackupServer) Probe(ctx context.Context, probeRequest *pb.Probe
 }
 
 // Create backup of the provided volumes
-func (server *volBackupServer) StartBackup(ctx context.Context, req *pb.StartBackupRequest) (*pb.StartBackupResponse, error) {
+func (server *volBackupServer) StartBackup(req *pb.StartBackupRequest,
+	res pb.VolumeBackup_StartBackupServer) error {
+	backupInfos := req.GetBackupInfo()
+
+	if len(backupInfos) != 1 {
+		return status.Error(codes.InvalidArgument, "Expect only one volume for backup")
+	}
+
+	var backupInfo *pb.VolBackup
+	for _, info := range backupInfos {
+		backupInfo = info // extract backup info
+	}
+
+	backupVolumePath := backupInfo.MountPath
+	if backupVolumePath == "" {
+		return status.Error(codes.InvalidArgument, "Backup volume path for restic driver expected")
+	}
+
+	if req.Location == "" {
+		return status.Error(codes.InvalidArgument, "Backup repository path for restic driver expected")
+	}
+
+	repoIdentifier, err := remoteRepoIdentifier(req.Location, backupInfo.Pv.Name)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, "Expect backup volume path for restic driver")
+	}
+
+	// backup tags
+	tags := tags(backupInfo.Pv)
+	// password file path
+	passwdFile, err := passwdPath()
+	if err != nil {
+		return status.Error(codes.Internal,
+			fmt.Sprintf("Failed to create password file. %s", err))
+	}
+
+	err = server.ensureRepoInit(repoIdentifier, passwdFile)
+	if err != nil {
+		return status.Errorf(codes.FailedPrecondition, "failed to initialize repository with error: %s", err)
+	}
+
+	backupCMD := backupCommand(repoIdentifier, passwdFile, backupVolumePath, tags)
+	summary, stderrBuf, err := runBackup(backupCMD, server.logger, server.backupStatusUpdaterFunc(backupInfo, res))
+	if err != nil {
+		if strings.Contains(stderrBuf, "snapshot is empty") {
+			server.logger.Debugf("Restic backup got empty dir with %s path", backupVolumePath)
+			return status.Error(codes.FailedPrecondition, "volume was empty so no snapshot was taken")
+		}
+		return status.Error(codes.FailedPrecondition,
+			fmt.Sprintf("error running restic backup command %s with error: %v stderr: %v", backupCMD.String(), err, stderrBuf))
+	}
+
+	snapshotIDCmd := getSnapshotCommand(repoIdentifier, passwdFile, tags)
+	snapshotID, err := getSnapshotID(snapshotIDCmd)
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("error getting snapshot id with error: %v", err))
+	}
+
 	backupIdentifiers := make([]*pb.BackupIdentifier, 0)
 	for _, backupInfo := range req.GetBackupInfo() {
 		backupIdentifiers = append(backupIdentifiers, &pb.BackupIdentifier{
 			PvName: backupInfo.Pv.Name,
 			BackupIdentity: &pb.BackupIdentity{
-				BackupHandle:     backupInfo.Snapshot.SnapshotHandle,
-				BackupAttributes: backupInfo.Snapshot.SnapshotAttributes,
+				BackupHandle: snapshotID,
 			},
 		})
 	}
 
-	return &pb.StartBackupResponse{
+	err = res.Send(&pb.StartBackupResponse{
 		BackupInfo: backupIdentifiers,
-	}, nil
+	})
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("error sending snapshot id with error: %v", err))
+	}
+
+	server.logger.Infof("Run command=%s, stdout=%s, stderr=%s", backupCMD.String(), summary, stderrBuf)
+	return nil
+}
+
+func (server *volBackupServer) backupStatusUpdaterFunc(backupInfo *pb.VolBackup,
+	res pb.VolumeBackup_StartBackupServer) func(state kahuapi.VolumeBackupState) {
+	return func(state kahuapi.VolumeBackupState) {
+		err := res.Send(&pb.StartBackupResponse{
+			BackupInfo: []*pb.BackupIdentifier{
+				&pb.BackupIdentifier{
+					PvName:   backupInfo.Pv.Name,
+					Progress: state.Progress,
+				},
+			},
+		})
+		if err != nil {
+			server.logger.Errorf("error sending snapshot id with error: %v", err)
+		}
+	}
+}
+
+func (server *volBackupServer) ensureRepoInit(repoIdentifier, passwordFile string) error {
+	snapshotsCmd := snapshotsCommand(repoIdentifier, passwordFile)
+	// use the '--latest=1' flag to minimize the amount of data fetched since
+	// we're just validating that the repo exists and can be authenticated
+	// to.
+	// "--last" is replaced by "--latest=1" in restic v0.12.1
+	snapshotsCmd.ExtraFlags = append(snapshotsCmd.ExtraFlags, "--latest=1")
+	stdout, stderr, err := runCommand(snapshotsCmd.Cmd())
+	if err != nil {
+		err = errors.Wrapf(err, "error running command=%s, stdout=%s, stderr=%s", snapshotsCmd.Cmd().String(), stdout, stderr)
+		if strings.Contains(err.Error(), "Is there a repository at the following location?") {
+			return initRepository(repoIdentifier, passwordFile)
+		}
+		return err
+	}
+
+	return nil
 }
 
 // Delete given backup
@@ -154,13 +260,6 @@ func (server *volBackupServer) CancelRestore(context.Context, *pb.CancelRestoreR
 // Get restore statistics
 func (server *volBackupServer) GetRestoreStat(ctx context.Context, req *pb.GetRestoreStatRequest) (*pb.GetRestoreStatResponse, error) {
 	restoreStats := make([]*pb.RestoreStat, 0)
-	// for _, volID := range req.RestoreVolumeIdentity {
-	// 	restoreStats = append(restoreStats, &pb.RestoreStat{
-	// 		RestoreVolumeHandle: volID.VolumeHandle,
-	// 		Progress:            100,
-	// 	})
-	// }
-
 	return &pb.GetRestoreStatResponse{
 		RestoreVolumeStat: restoreStats,
 	}, nil

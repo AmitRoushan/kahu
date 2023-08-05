@@ -1,0 +1,23 @@
+apiVersion: kahu.io/v1beta1
+kind: ProviderRegistration
+metadata:
+  name: kahu-nfs-provider
+  namespace: {{ (.Values.global).namespace | default "kahu" }}
+spec:
+  providerName: nfs-provider.meta.backup.kahu.io
+  providerType: ResourceBackup
+  version: v1.0.0
+  template:
+    metadata:
+      labels:
+        app: nfs-provider
+    spec:
+      containers:
+        - image: {{ .Values.metadataProviders.nfs.providerImage }}
+          {{ if (.Values.image).pullPolicy }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{ else }}
+          imagePullPolicy: IfNotPresent
+          {{ end }}
+          name: nfs-driver
+          command: ["nfs-provider"]

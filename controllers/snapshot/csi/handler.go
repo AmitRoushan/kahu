@@ -331,6 +331,7 @@ func (s *snapshoter) populateCSISnapshotHandle(kahuSnapshot *kahuapi.VolumeSnaps
 		}
 
 		kahuSnapshot.Status.SnapshotStates[i].CSISnapshot.Handle = *csiSnapshotContent.Status.SnapshotHandle
+		kahuSnapshot.Status.SnapshotStates[i].RestoreSize = csiSnapshotContent.Status.RestoreSize
 	}
 
 	return s.kahuClient.KahuV1beta1().

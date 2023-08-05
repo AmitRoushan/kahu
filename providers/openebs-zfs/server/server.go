@@ -113,7 +113,8 @@ func (server *volBackupServer) Probe(ctx context.Context, probeRequest *pb.Probe
 }
 
 // Create backup of the provided volumes
-func (server *volBackupServer) StartBackup(ctx context.Context, req *pb.StartBackupRequest) (*pb.StartBackupResponse, error) {
+func (server *volBackupServer) StartBackup(req *pb.StartBackupRequest,
+	res pb.VolumeBackup_StartBackupServer) error {
 	backupIdentifiers := make([]*pb.BackupIdentifier, 0)
 	for _, backupInfo := range req.GetBackupInfo() {
 		backupIdentifiers = append(backupIdentifiers, &pb.BackupIdentifier{
@@ -125,9 +126,7 @@ func (server *volBackupServer) StartBackup(ctx context.Context, req *pb.StartBac
 		})
 	}
 
-	return &pb.StartBackupResponse{
-		BackupInfo: backupIdentifiers,
-	}, nil
+	return res.Send(&pb.StartBackupResponse{BackupInfo: backupIdentifiers})
 }
 
 // Delete given backup

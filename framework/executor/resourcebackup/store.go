@@ -17,7 +17,6 @@ limitations under the License.
 package resourcebackup
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -56,7 +55,7 @@ func (collection *StoreCollection) Add(location string, svc Service) error {
 	defer collection.Unlock()
 	service, ok := collection.store[location]
 	if ok && service != nil {
-		return fmt.Errorf("service alrady available for %s", location)
+		return nil
 	}
 	collection.store[location] = svc
 	return nil

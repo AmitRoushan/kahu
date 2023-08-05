@@ -170,12 +170,11 @@ func (s *backupper) delayedStop() {
 		select {
 		case <-realClock.After(60 * time.Second):
 			s.counterLock.Lock()
+			defer s.counterLock.Unlock()
 			if s.counter == 0 {
-				s.counterLock.Unlock()
 				s.stop()
 				return
 			}
-			s.counterLock.Lock()
 		}
 	}
 }

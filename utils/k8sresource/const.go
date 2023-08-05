@@ -51,6 +51,8 @@ const (
 	kindRole                     = "Role"
 	kindBackup                   = "Backup"
 	kindRestore                  = "Restore"
+	kindVBC                      = "VolumeBackupContent"
+	kindVRC                      = "VolumeRestoreContent"
 	kindKahuVolumeSnapshot       = "VolumeSnapshot"
 	kindKahuVolumeGroup          = "VolumeGroup"
 	kindKahuProviderRegistration = "ProviderRegistration"
@@ -81,6 +83,8 @@ var RoleBindingGVK schema.GroupVersionKind
 var RoleGVK schema.GroupVersionKind
 var BackupGVK schema.GroupVersionKind
 var RestoreGVK schema.GroupVersionKind
+var VBCGVK schema.GroupVersionKind
+var VRCGVK schema.GroupVersionKind
 var KahuVolumeSnapshotGVK schema.GroupVersionKind
 var KahuVolumeGroupGVK schema.GroupVersionKind
 var KahuProviderRegistrationGVK schema.GroupVersionKind
@@ -109,6 +113,8 @@ func init() {
 		RoleGVK = rbacv1.SchemeGroupVersion.WithKind(kindRole)
 		BackupGVK = kahuapi.SchemeGroupVersion.WithKind(kindBackup)
 		RestoreGVK = kahuapi.SchemeGroupVersion.WithKind(kindRestore)
+		VBCGVK = kahuapi.SchemeGroupVersion.WithKind(kindVBC)
+		VRCGVK = kahuapi.SchemeGroupVersion.WithKind(kindVRC)
 		KahuVolumeSnapshotGVK = kahuapi.SchemeGroupVersion.WithKind(kindKahuVolumeSnapshot)
 		KahuVolumeGroupGVK = kahuapi.SchemeGroupVersion.WithKind(kindKahuVolumeGroup)
 		KahuProviderRegistrationGVK = kahuapi.SchemeGroupVersion.WithKind(kindKahuProviderRegistration)

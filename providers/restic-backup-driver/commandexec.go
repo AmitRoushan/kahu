@@ -20,7 +20,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
+	"io/fs"
+	"os"
 	"os/exec"
 	"time"
 
@@ -42,9 +44,9 @@ type backupStatusLine struct {
 	TotalBytesProcessed int64 `json:"total_bytes_processed"`
 }
 
-// GetSnapshotID runs provided 'restic snapshots' command to get the ID of a snapshot
+// getSnapshotID runs provided 'restic snapshots' command to get the ID of a snapshot
 // and an error if a unique snapshot cannot be identified.
-func GetSnapshotID(snapshotIdCmd *Command) (string, error) {
+func getSnapshotID(snapshotIdCmd *Command) (string, error) {
 	stdout, stderr, err := runCommand(snapshotIdCmd.Cmd())
 	if err != nil {
 		return "", errors.Wrapf(err, "error running command, stderr=%s", stderr)
@@ -66,9 +68,19 @@ func GetSnapshotID(snapshotIdCmd *Command) (string, error) {
 	return snapshots[0].ShortID, nil
 }
 
-// RunBackup runs a `restic backup` command and watches the output to provide
+func initRepository(repoIdentifier, passwordFile string) error {
+	initCMD := initCommand(repoIdentifier, passwordFile)
+	_, stderr, err := runCommand(initCMD.Cmd())
+	if err != nil {
+		return errors.Wrapf(err, "error running command, stderr=%s", stderr)
+	}
+
+	return nil
+}
+
+// runBackup runs a `restic backup` command and watches the output to provide
 // progress updates to the caller.
-func RunBackup(backupCmd *Command, log logrus.FieldLogger, updateFunc func(kahuapi.VolumeBackupState)) (string, string, error) {
+func runBackup(backupCmd *Command, log logrus.FieldLogger, updateFunc func(kahuapi.VolumeBackupState)) (string, string, error) {
 	// buffers for copying command stdout/err output into
 	stdoutBuf := new(bytes.Buffer)
 	stderrBuf := new(bytes.Buffer)
@@ -179,7 +191,7 @@ func getSummaryLine(b []byte) ([]byte, error) {
 
 // RunRestore runs a `restic restore` command and monitors the volume size to
 // provide progress updates to the caller.
-func RunRestore(restoreCmd *Command, log logrus.FieldLogger, updateFunc func(kahuapi.VolumeRestoreState)) (string, string, error) {
+func runRestore(restoreCmd *Command, log logrus.FieldLogger, updateFunc func(kahuapi.VolumeRestoreState)) (string, string, error) {
 	snapshotSize, err := getSnapshotSize(restoreCmd.RepoIdentifier, restoreCmd.PasswordFile, restoreCmd.CACertFile, restoreCmd.Args[0], restoreCmd.Env)
 	if err != nil {
 		return "", "", errors.Wrap(err, "error getting snapshot size")
@@ -249,9 +261,17 @@ func getSnapshotSize(repoIdentifier, passwordFile, caCertFile, snapshotID string
 func getVolumeSize(path string) (int64, error) {
 	var size int64
 
-	files, err := ioutil.ReadDir(path)
+	entries, err := os.ReadDir(path)
 	if err != nil {
 		return 0, errors.Wrapf(err, "error reading directory %s", path)
+	}
+	files := make([]fs.FileInfo, 0, len(entries))
+	for _, entry := range entries {
+		file, err := entry.Info()
+		if err != nil {
+			errors.Wrapf(err, "error reading file entry for %s", path)
+		}
+		files = append(files, file)
 	}
 
 	for _, file := range files {
@@ -283,13 +303,13 @@ func runCommand(cmd *exec.Cmd) (string, string, error) {
 
 	var stdout, stderr string
 
-	if res, readErr := ioutil.ReadAll(stdoutBuf); readErr != nil {
+	if res, readErr := io.ReadAll(stdoutBuf); readErr != nil {
 		stdout = errors.Wrap(readErr, "error reading command's stdout").Error()
 	} else {
 		stdout = string(res)
 	}
 
-	if res, readErr := ioutil.ReadAll(stderrBuf); readErr != nil {
+	if res, readErr := io.ReadAll(stderrBuf); readErr != nil {
 		stderr = errors.Wrap(readErr, "error reading command's stderr").Error()
 	} else {
 		stderr = string(res)

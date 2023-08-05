@@ -633,7 +633,7 @@ func (ctrl *controller) handlePodVolumeSnapshot(backup *kahuapi.Backup,
 			continue
 		}
 
-		wait, err := ctrl.volumeHandler.Snapshot().ByVolumeGroup(backup.Name, volumeGroup)
+		wait, err := ctrl.volumeHandler.Snapshot().ByVolumeGroup(backup, volumeGroup)
 		if err != nil {
 			ctrl.logger.Errorf("Failed to ensure volume snapshot. %s", err)
 			if _, err = ctrl.updateBackupStatusWithEvent(backup, kahuapi.BackupStatus{

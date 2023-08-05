@@ -1,0 +1,17 @@
+{{ if (.Values.volumeBackupProviders).restic.enableProvider }}
+apiVersion: kahu.io/v1beta1
+kind: BackupLocation
+metadata:
+   name: restic
+   {{ if (.Values.volumeBackupProviders).restic.defaultLocation }}
+   annotations:
+      kahu.io/is-default-volume-backup-location: "true"
+   {{ end }}
+spec:
+   providerName: {{ (.Values.volumeBackupProviders).restic.providerName }}
+   location:
+     path: "/data"
+     sourceRef:
+       kind: PersistentVolumeClaim
+       name: nfs
+{{ end }}

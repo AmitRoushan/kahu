@@ -1,0 +1,11 @@
+apiVersion: kahu.io/v1beta1
+kind: BackupLocation
+metadata:
+  name: nfs
+spec:
+  providerName: {{ (.Values.metadataProviders).nfs.providerName }}
+  location:
+    path: {{ (.Values.metadataProviders).nfs.mountPath }}
+    sourceRef:
+      kind: PersistentVolumeClaim
+      name: {{ (.Values.metadataProviders).nfs.pvcName }}

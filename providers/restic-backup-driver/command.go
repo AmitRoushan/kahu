@@ -86,10 +86,6 @@ func passwordFlag(file string) string {
 	return fmt.Sprintf("--password-file=%s", file)
 }
 
-func cacheDirFlag(dir string) string {
-	return fmt.Sprintf("--cache-dir=%s", dir)
-}
-
 func cacertFlag(path string) string {
 	return fmt.Sprintf("--cacert=%s", path)
 }

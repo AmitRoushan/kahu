@@ -39,7 +39,7 @@ const (
 )
 
 type Snapshotter interface {
-	ByVolumeGroup(backupName string, volGroup group.Interface) (Wait, error)
+	ByVolumeGroup(backup *kahuapi.Backup, volGroup group.Interface) (Wait, error)
 	GetSnapshotsByBackup(backupName string) ([]kahuapi.VolumeSnapshot, error)
 	Delete(volSnapshot string) error
 	GetSnapshotsByProvisioner() ([]*kahuapi.VolumeSnapshot, error, error)
@@ -69,7 +69,7 @@ func NewSnapshotter(ctx context.Context, clientFactory client.Factory) (Snapshot
 	}, nil
 }
 
-func (s *snapshotter) ByVolumeGroup(backupName string, volGroup group.Interface) (Wait, error) {
+func (s *snapshotter) ByVolumeGroup(backup *kahuapi.Backup, volGroup group.Interface) (Wait, error) {
 	volumes := volGroup.GetResources()
 	provisioner := volGroup.GetProvisionerName()
 	if provisioner == "" {
@@ -87,7 +87,7 @@ func (s *snapshotter) ByVolumeGroup(backupName string, volGroup group.Interface)
 		})
 	}
 
-	snapshot, err := s.snapshot(backupName, provisioner, volRef)
+	snapshot, err := s.snapshot(backup, provisioner, volRef)
 	if err != nil {
 		// delete older kahu snapshot objects
 		return nil, err
@@ -125,7 +125,7 @@ func (s *snapshotter) GetSnapshotsByProvisioner() ([]*kahuapi.VolumeSnapshot, er
 	return nil, nil, nil
 }
 
-func (s *snapshotter) snapshot(backup string,
+func (s *snapshotter) snapshot(backup *kahuapi.Backup,
 	provisioner string, volumes []kahuapi.ResourceReference) (*kahuapi.VolumeSnapshot, error) {
 	kahuSnapshot := s.volGroupToSnapshot(backup, provisioner, volumes)
 
@@ -135,16 +135,24 @@ func (s *snapshotter) snapshot(backup string,
 		Create(context.TODO(), kahuSnapshot, metav1.CreateOptions{})
 }
 
-func (s *snapshotter) volGroupToSnapshot(backup string,
+func (s *snapshotter) volGroupToSnapshot(backup *kahuapi.Backup,
 	provisioner string,
 	vols []kahuapi.ResourceReference) *kahuapi.VolumeSnapshot {
 	return &kahuapi.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   "snapshot-" + uuid.New().String(),
-			Labels: s.snapshotLabel(backup, provisioner).MatchLabels,
+			Name:   "volsnapshot-" + uuid.New().String(),
+			Labels: s.snapshotLabel(backup.Name, provisioner).MatchLabels,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: k8sresource.BackupGVK.GroupVersion().String(),
+					Kind:       k8sresource.BackupGVK.Kind,
+					Name:       backup.Name,
+					UID:        backup.UID,
+				},
+			},
 		},
 		Spec: kahuapi.VolumeSnapshotSpec{
-			BackupName:       &backup,
+			BackupName:       &backup.Name,
 			SnapshotProvider: &provisioner,
 			VolumeSource: kahuapi.VolumeSource{
 				List: vols,
@@ -153,10 +161,10 @@ func (s *snapshotter) volGroupToSnapshot(backup string,
 	}
 }
 
-func (s *snapshotter) snapshotLabel(backup, provisioner string) *metav1.LabelSelector {
+func (s *snapshotter) snapshotLabel(backupName, provisioner string) *metav1.LabelSelector {
 	return &metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			labelBackupName:      backup,
+			labelBackupName:      backupName,
 			labelProvisionerName: provisioner,
 		},
 	}
